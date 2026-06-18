@@ -1,0 +1,16 @@
+{
+  "schools": [],
+  "students": [],
+  "users": [],
+  "years": [],
+  "campaigns": [],
+  "nutritionists": [],
+  "evaluations": [],
+  "settings": {
+    "systemName": "ABDESM",
+    "version": "1.6.0-beta.260105",
+    "timezone": "America/Sao_Paulo",
+    "language": "pt-BR",
+    "maintenanceMode": false
+  }
+}
