@@ -1,6 +1,6 @@
 const defaultSettings = {
-  systemName: "ABDESM",
-  version: "1.6.0-beta.260105",
+  systemName: "NUTRATIVA",
+  version: "2026.06 Local",
   timezone: "America/Sao_Paulo",
   language: "pt-BR",
   maintenanceMode: false,

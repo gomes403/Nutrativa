@@ -3,6 +3,8 @@ dist/
 captures/
 tmp/
 .codex-logs/
+scripts/.cache/
+.ssh/
 
 npm-debug.log*
 yarn-debug.log*

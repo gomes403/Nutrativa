@@ -4453,10 +4453,37 @@
       "profile": "Nutricionista",
       "crn": "020205558",
       "password": "123456"
+    },
+    {
+      "id": "bc796d20-7d6b-4b47-9941-5fdaf2f1890d",
+      "name": "Edimar",
+      "email": "edimar@gmail.com",
+      "login": "edimar",
+      "cpf": "16211727402",
+      "password": "123456",
+      "phone": "81993285755",
+      "profile": "Nutricionista",
+      "crn": "696969"
     }
   ],
-  "years": [],
-  "campaigns": [],
+  "years": [
+    {
+      "id": "bf9c0ed2-c696-4f19-aaa1-4cd2e2ac807a",
+      "year": "2026",
+      "active": true
+    }
+  ],
+  "campaigns": [
+    {
+      "id": "9bb2da14-784a-4ccf-ba7a-03785c394d2d",
+      "name": "Techno",
+      "year": "2026",
+      "startDate": "2026-06-19",
+      "endDate": "2026-12-19",
+      "status": "Fechada",
+      "updatedAt": "2026-06-25T18:51:01.554Z"
+    }
+  ],
   "nutritionists": [
     {
       "id": "f05897db-e102-4508-9582-ce85295a185b",
@@ -4464,16 +4491,1065 @@
       "phone": "",
       "crn": "",
       "schoolIds": [
-        "9f616d78-36f1-451a-bc49-ca7ebcb172b5",
         "319f0dec-587b-4cbd-9415-ce2e8cc2b6c6"
       ],
       "name": "Marcelo Gomes"
+    },
+    {
+      "id": "79e0e554-ebd7-4d45-8018-178bd159ecf9",
+      "userId": "bc796d20-7d6b-4b47-9941-5fdaf2f1890d",
+      "phone": "",
+      "crn": "",
+      "schoolIds": [
+        "9f616d78-36f1-451a-bc49-ca7ebcb172b5"
+      ],
+      "name": "Edimar"
     }
   ],
-  "evaluations": [],
+  "evaluations": [
+    {
+      "id": "5d05e182-cca1-4725-b30b-933312a8498c",
+      "studentId": "e4f9983e-ff86-46a0-a72c-8dbafa52cbd9",
+      "studentName": "Joao Silva",
+      "schoolId": "9f616d78-36f1-451a-bc49-ca7ebcb172b5",
+      "schoolName": "José de Lima Junior",
+      "nutritionistUserId": "249dff70-3311-4b51-8d3c-45252df9d0f9",
+      "nutritionistId": "f05897db-e102-4508-9582-ce85295a185b",
+      "nutritionistName": "Marcelo Gomes",
+      "crn": "020205558",
+      "status": "Finalizada",
+      "anthropometry": {
+        "weight": "52",
+        "height": "142",
+        "waist": "",
+        "bmi": "25.79"
+      },
+      "sections": {
+        "eatingHabits": {
+          "enabled": false,
+          "friedFoods": false,
+          "skipMeals": false,
+          "sweets": false,
+          "lowWater": false,
+          "dailyFruit": false,
+          "notes": ""
+        },
+        "medications": {
+          "enabled": false,
+          "items": "",
+          "notes": ""
+        },
+        "allergies": {
+          "enabled": false,
+          "lactose": false,
+          "gluten": false,
+          "eggs": false,
+          "peanuts": false,
+          "dyes": false,
+          "notes": ""
+        },
+        "record24h": {
+          "enabled": false,
+          "breakfast": "",
+          "morningSnack": "",
+          "lunch": "",
+          "afternoonSnack": "",
+          "dinner": "",
+          "supper": "",
+          "beverages": ""
+        },
+        "familyHistory": {
+          "enabled": false,
+          "notes": ""
+        },
+        "clinicalSigns": {
+          "enabled": false,
+          "notes": ""
+        },
+        "diagnosis": {
+          "enabled": false,
+          "notes": ""
+        },
+        "mealPlan": {
+          "enabled": false,
+          "preset": "Plano Equilibrado",
+          "customFoods": "",
+          "breakfast": "",
+          "snacks": "",
+          "lunchDinner": "",
+          "beverages": "",
+          "weeklyPlan": ""
+        }
+      },
+      "createdAt": "2026-06-19T12:27:40.337Z",
+      "updatedAt": "2026-06-19T12:32:10.201Z",
+      "evaluatedAt": "2026-06-19T12:32:10.201Z",
+      "studentGrade": "1o Ano",
+      "studentClassroom": "A",
+      "studentShift": "Manha",
+      "campaignId": "9bb2da14-784a-4ccf-ba7a-03785c394d2d",
+      "campaignName": "Techno",
+      "campaignStartDate": "2026-06-19",
+      "campaignEndDate": "2026-12-19"
+    },
+    {
+      "id": "3cc88f2f-eaa9-451c-94f5-f663acad1770",
+      "studentId": "97f9ef96-ab32-4e48-ab86-d8219d97dff2",
+      "studentName": "ELIAS MIGUEL DOS SANTOS",
+      "schoolId": "9f616d78-36f1-451a-bc49-ca7ebcb172b5",
+      "schoolName": "José de Lima Junior",
+      "nutritionistUserId": "249dff70-3311-4b51-8d3c-45252df9d0f9",
+      "nutritionistId": "f05897db-e102-4508-9582-ce85295a185b",
+      "nutritionistName": "Marcelo Gomes",
+      "crn": "020205558",
+      "status": "Finalizada",
+      "anthropometry": {
+        "weight": "5.2",
+        "height": "50",
+        "waist": "",
+        "bmi": "20.80"
+      },
+      "sections": {
+        "eatingHabits": {
+          "enabled": false,
+          "friedFoods": false,
+          "skipMeals": false,
+          "sweets": false,
+          "lowWater": false,
+          "dailyFruit": false,
+          "notes": ""
+        },
+        "medications": {
+          "enabled": false,
+          "items": "",
+          "notes": ""
+        },
+        "allergies": {
+          "enabled": false,
+          "lactose": false,
+          "gluten": false,
+          "eggs": false,
+          "peanuts": false,
+          "dyes": false,
+          "notes": ""
+        },
+        "record24h": {
+          "enabled": false,
+          "breakfast": "",
+          "morningSnack": "",
+          "lunch": "",
+          "afternoonSnack": "",
+          "dinner": "",
+          "supper": "",
+          "beverages": ""
+        },
+        "familyHistory": {
+          "enabled": false,
+          "notes": ""
+        },
+        "clinicalSigns": {
+          "enabled": false,
+          "notes": ""
+        },
+        "diagnosis": {
+          "enabled": false,
+          "notes": ""
+        },
+        "mealPlan": {
+          "enabled": false,
+          "preset": "Plano Equilibrado",
+          "customFoods": "",
+          "breakfast": "",
+          "snacks": "",
+          "lunchDinner": "",
+          "beverages": "",
+          "weeklyPlan": ""
+        }
+      },
+      "createdAt": "2026-06-19T14:15:31.457Z",
+      "updatedAt": "2026-06-19T14:20:35.154Z",
+      "evaluatedAt": "2026-06-19T14:20:35.154Z",
+      "studentGrade": "Bercario",
+      "studentClassroom": "A",
+      "studentShift": "Tarde",
+      "campaignId": "9bb2da14-784a-4ccf-ba7a-03785c394d2d",
+      "campaignName": "Techno",
+      "campaignStartDate": "2026-06-19",
+      "campaignEndDate": "2026-12-19"
+    },
+    {
+      "id": "2d2b7ba0-04e8-4604-8bc4-8144ec89fac2",
+      "studentId": "19f8f19d-6c4e-4c7d-9923-8582ca28070b",
+      "studentName": "ETHAN RAVI ARAGÃO DA SILVA",
+      "schoolId": "9f616d78-36f1-451a-bc49-ca7ebcb172b5",
+      "schoolName": "José de Lima Junior",
+      "nutritionistUserId": "249dff70-3311-4b51-8d3c-45252df9d0f9",
+      "nutritionistId": "f05897db-e102-4508-9582-ce85295a185b",
+      "nutritionistName": "Marcelo Gomes",
+      "crn": "020205558",
+      "status": "Finalizada",
+      "anthropometry": {
+        "weight": "6",
+        "height": "50",
+        "waist": "",
+        "bmi": "24.00"
+      },
+      "sections": {
+        "eatingHabits": {
+          "enabled": true,
+          "friedFoods": false,
+          "skipMeals": false,
+          "sweets": false,
+          "lowWater": false,
+          "dailyFruit": false,
+          "notes": ""
+        },
+        "medications": {
+          "enabled": false,
+          "items": "",
+          "notes": ""
+        },
+        "allergies": {
+          "enabled": false,
+          "lactose": false,
+          "gluten": false,
+          "eggs": false,
+          "peanuts": false,
+          "dyes": false,
+          "notes": ""
+        },
+        "record24h": {
+          "enabled": true,
+          "breakfast": "",
+          "morningSnack": "",
+          "lunch": "",
+          "afternoonSnack": "",
+          "dinner": "",
+          "supper": "",
+          "beverages": ""
+        },
+        "familyHistory": {
+          "enabled": false,
+          "notes": ""
+        },
+        "clinicalSigns": {
+          "enabled": false,
+          "notes": ""
+        },
+        "diagnosis": {
+          "enabled": true,
+          "notes": ""
+        },
+        "mealPlan": {
+          "enabled": false,
+          "preset": "Plano Equilibrado",
+          "customFoods": "",
+          "breakfast": "",
+          "snacks": "",
+          "lunchDinner": "",
+          "beverages": "",
+          "weeklyPlan": ""
+        }
+      },
+      "createdAt": "2026-06-19T14:21:03.826Z",
+      "updatedAt": "2026-06-19T14:21:27.818Z",
+      "evaluatedAt": "2026-06-19T14:21:27.818Z",
+      "studentGrade": "Bercario",
+      "studentClassroom": "A",
+      "studentShift": "Tarde",
+      "campaignId": "9bb2da14-784a-4ccf-ba7a-03785c394d2d",
+      "campaignName": "Techno",
+      "campaignStartDate": "2026-06-19",
+      "campaignEndDate": "2026-12-19"
+    },
+    {
+      "id": "288440ff-86ab-4c08-9101-cfd5268d85e2",
+      "studentId": "2c083def-3dc7-48c4-a05c-622e091a84fe",
+      "studentName": "HEITOR RENATO ARAÚJO DE SOUSA",
+      "schoolId": "319f0dec-587b-4cbd-9415-ce2e8cc2b6c6",
+      "schoolName": "CRECHE EMERSON MARQUES VIEIRA",
+      "nutritionistUserId": "249dff70-3311-4b51-8d3c-45252df9d0f9",
+      "nutritionistId": "f05897db-e102-4508-9582-ce85295a185b",
+      "nutritionistName": "Marcelo Gomes",
+      "crn": "020205558",
+      "status": "Finalizada",
+      "anthropometry": {
+        "weight": "7",
+        "height": "52",
+        "waist": "",
+        "bmi": "25.89"
+      },
+      "sections": {
+        "eatingHabits": {
+          "enabled": true,
+          "friedFoods": false,
+          "skipMeals": false,
+          "sweets": false,
+          "lowWater": false,
+          "dailyFruit": false,
+          "notes": ""
+        },
+        "medications": {
+          "enabled": false,
+          "items": "",
+          "notes": ""
+        },
+        "allergies": {
+          "enabled": false,
+          "lactose": false,
+          "gluten": false,
+          "eggs": false,
+          "peanuts": false,
+          "dyes": false,
+          "notes": ""
+        },
+        "record24h": {
+          "enabled": true,
+          "breakfast": "",
+          "morningSnack": "",
+          "lunch": "",
+          "afternoonSnack": "",
+          "dinner": "",
+          "supper": "",
+          "beverages": ""
+        },
+        "familyHistory": {
+          "enabled": false,
+          "notes": ""
+        },
+        "clinicalSigns": {
+          "enabled": false,
+          "notes": ""
+        },
+        "diagnosis": {
+          "enabled": true,
+          "notes": ""
+        },
+        "mealPlan": {
+          "enabled": false,
+          "preset": "Plano Equilibrado",
+          "customFoods": "",
+          "breakfast": "",
+          "snacks": "",
+          "lunchDinner": "",
+          "beverages": "",
+          "weeklyPlan": ""
+        }
+      },
+      "createdAt": "2026-06-19T14:21:29.857Z",
+      "updatedAt": "2026-06-19T14:21:39.337Z",
+      "evaluatedAt": "2026-06-19T14:21:39.337Z",
+      "studentGrade": "Bercario",
+      "studentClassroom": "A",
+      "studentShift": "Tarde",
+      "campaignId": "9bb2da14-784a-4ccf-ba7a-03785c394d2d",
+      "campaignName": "Techno",
+      "campaignStartDate": "2026-06-19",
+      "campaignEndDate": "2026-12-19"
+    },
+    {
+      "id": "723571d7-3a2c-445e-adb3-5fabf6d51d80",
+      "studentId": "8b2a0f3c-24d9-4e01-b42c-f3c4d855adad",
+      "studentName": "MARCELLA GONZAGA DA SILVA",
+      "schoolId": "9f616d78-36f1-451a-bc49-ca7ebcb172b5",
+      "schoolName": "José de Lima Junior",
+      "nutritionistUserId": "249dff70-3311-4b51-8d3c-45252df9d0f9",
+      "nutritionistId": "f05897db-e102-4508-9582-ce85295a185b",
+      "nutritionistName": "Marcelo Gomes",
+      "crn": "020205558",
+      "status": "Finalizada",
+      "anthropometry": {
+        "weight": "6.5",
+        "height": "50",
+        "waist": "",
+        "bmi": "26.00"
+      },
+      "sections": {
+        "eatingHabits": {
+          "enabled": true,
+          "friedFoods": false,
+          "skipMeals": false,
+          "sweets": false,
+          "lowWater": false,
+          "dailyFruit": false,
+          "notes": ""
+        },
+        "medications": {
+          "enabled": false,
+          "items": "",
+          "notes": ""
+        },
+        "allergies": {
+          "enabled": false,
+          "lactose": false,
+          "gluten": false,
+          "eggs": false,
+          "peanuts": false,
+          "dyes": false,
+          "notes": ""
+        },
+        "record24h": {
+          "enabled": true,
+          "breakfast": "",
+          "morningSnack": "",
+          "lunch": "",
+          "afternoonSnack": "",
+          "dinner": "",
+          "supper": "",
+          "beverages": ""
+        },
+        "familyHistory": {
+          "enabled": false,
+          "notes": ""
+        },
+        "clinicalSigns": {
+          "enabled": false,
+          "notes": ""
+        },
+        "diagnosis": {
+          "enabled": true,
+          "notes": ""
+        },
+        "mealPlan": {
+          "enabled": false,
+          "preset": "Plano Equilibrado",
+          "customFoods": "",
+          "breakfast": "",
+          "snacks": "",
+          "lunchDinner": "",
+          "beverages": "",
+          "weeklyPlan": ""
+        }
+      },
+      "createdAt": "2026-06-19T14:21:41.393Z",
+      "updatedAt": "2026-06-19T14:21:53.898Z",
+      "evaluatedAt": "2026-06-19T14:21:53.898Z",
+      "studentGrade": "Bercario",
+      "studentClassroom": "A",
+      "studentShift": "Tarde",
+      "campaignId": "9bb2da14-784a-4ccf-ba7a-03785c394d2d",
+      "campaignName": "Techno",
+      "campaignStartDate": "2026-06-19",
+      "campaignEndDate": "2026-12-19"
+    },
+    {
+      "id": "084840ec-3a1e-4455-8027-b7ed329398a9",
+      "studentId": "4a73e6ea-1e9d-468e-9b23-e541be3a48c1",
+      "studentName": "MATTEO NOAH BECKHAM GONZAGA DA SILVA",
+      "schoolId": "9f616d78-36f1-451a-bc49-ca7ebcb172b5",
+      "schoolName": "José de Lima Junior",
+      "nutritionistUserId": "249dff70-3311-4b51-8d3c-45252df9d0f9",
+      "nutritionistId": "f05897db-e102-4508-9582-ce85295a185b",
+      "nutritionistName": "Marcelo Gomes",
+      "crn": "020205558",
+      "status": "Finalizada",
+      "anthropometry": {
+        "weight": "5.3",
+        "height": "48",
+        "waist": "",
+        "bmi": "23.00"
+      },
+      "sections": {
+        "eatingHabits": {
+          "enabled": false,
+          "friedFoods": false,
+          "skipMeals": false,
+          "sweets": false,
+          "lowWater": false,
+          "dailyFruit": false,
+          "notes": ""
+        },
+        "medications": {
+          "enabled": false,
+          "items": "",
+          "notes": ""
+        },
+        "allergies": {
+          "enabled": false,
+          "lactose": false,
+          "gluten": false,
+          "eggs": false,
+          "peanuts": false,
+          "dyes": false,
+          "notes": ""
+        },
+        "record24h": {
+          "enabled": false,
+          "breakfast": "",
+          "morningSnack": "",
+          "lunch": "",
+          "afternoonSnack": "",
+          "dinner": "",
+          "supper": "",
+          "beverages": ""
+        },
+        "familyHistory": {
+          "enabled": false,
+          "notes": ""
+        },
+        "clinicalSigns": {
+          "enabled": false,
+          "notes": ""
+        },
+        "diagnosis": {
+          "enabled": false,
+          "notes": ""
+        },
+        "mealPlan": {
+          "enabled": false,
+          "preset": "Plano Equilibrado",
+          "customFoods": "",
+          "breakfast": "",
+          "snacks": "",
+          "lunchDinner": "",
+          "beverages": "",
+          "weeklyPlan": ""
+        }
+      },
+      "createdAt": "2026-06-19T14:21:56.825Z",
+      "updatedAt": "2026-06-19T14:22:15.513Z",
+      "evaluatedAt": "2026-06-19T14:22:15.513Z",
+      "studentGrade": "Bercario",
+      "studentClassroom": "A",
+      "studentShift": "Tarde",
+      "campaignId": "9bb2da14-784a-4ccf-ba7a-03785c394d2d",
+      "campaignName": "Techno",
+      "campaignStartDate": "2026-06-19",
+      "campaignEndDate": "2026-12-19"
+    },
+    {
+      "id": "f178fd61-b3b9-446c-bb2f-5140012a3754",
+      "studentId": "84a5a394-a622-4108-ac67-0fc7a46dbd01",
+      "studentName": "ALLEF MIGUEL DO NASCIMENTO",
+      "schoolId": "319f0dec-587b-4cbd-9415-ce2e8cc2b6c6",
+      "schoolName": "CRECHE EMERSON MARQUES VIEIRA",
+      "nutritionistUserId": "249dff70-3311-4b51-8d3c-45252df9d0f9",
+      "nutritionistId": "f05897db-e102-4508-9582-ce85295a185b",
+      "nutritionistName": "Marcelo Gomes",
+      "crn": "020205558",
+      "status": "Finalizada",
+      "anthropometry": {
+        "weight": "5.1",
+        "height": "50",
+        "waist": "",
+        "bmi": "20.40"
+      },
+      "sections": {
+        "eatingHabits": {
+          "enabled": false,
+          "friedFoods": false,
+          "skipMeals": false,
+          "sweets": false,
+          "lowWater": false,
+          "dailyFruit": false,
+          "notes": ""
+        },
+        "medications": {
+          "enabled": false,
+          "items": "",
+          "notes": ""
+        },
+        "allergies": {
+          "enabled": false,
+          "lactose": false,
+          "gluten": false,
+          "eggs": false,
+          "peanuts": false,
+          "dyes": false,
+          "notes": ""
+        },
+        "record24h": {
+          "enabled": false,
+          "breakfast": "",
+          "morningSnack": "",
+          "lunch": "",
+          "afternoonSnack": "",
+          "dinner": "",
+          "supper": "",
+          "beverages": ""
+        },
+        "familyHistory": {
+          "enabled": false,
+          "notes": ""
+        },
+        "clinicalSigns": {
+          "enabled": false,
+          "notes": ""
+        },
+        "diagnosis": {
+          "enabled": false,
+          "notes": ""
+        },
+        "mealPlan": {
+          "enabled": false,
+          "preset": "Plano Equilibrado",
+          "customFoods": "",
+          "breakfast": "",
+          "snacks": "",
+          "lunchDinner": "",
+          "beverages": "",
+          "weeklyPlan": ""
+        }
+      },
+      "createdAt": "2026-06-19T14:22:17.649Z",
+      "updatedAt": "2026-06-19T14:22:54.097Z",
+      "evaluatedAt": "2026-06-19T14:22:54.097Z",
+      "studentGrade": "Bercario",
+      "studentClassroom": "A",
+      "studentShift": "Tarde",
+      "campaignId": "9bb2da14-784a-4ccf-ba7a-03785c394d2d",
+      "campaignName": "Techno",
+      "campaignStartDate": "2026-06-19",
+      "campaignEndDate": "2026-12-19"
+    },
+    {
+      "id": "16d03b2e-c708-4642-9087-64c09fbe7947",
+      "studentId": "f068bcbc-e50d-470c-bbec-c7efce4c28b7",
+      "studentName": "CECÍLIA BATISTA SILVA",
+      "schoolId": "9f616d78-36f1-451a-bc49-ca7ebcb172b5",
+      "schoolName": "José de Lima Junior",
+      "nutritionistUserId": "249dff70-3311-4b51-8d3c-45252df9d0f9",
+      "nutritionistId": "f05897db-e102-4508-9582-ce85295a185b",
+      "nutritionistName": "Marcelo Gomes",
+      "crn": "020205558",
+      "status": "Finalizada",
+      "anthropometry": {
+        "weight": "6",
+        "height": "55",
+        "waist": "",
+        "bmi": "19.83"
+      },
+      "sections": {
+        "eatingHabits": {
+          "enabled": false,
+          "friedFoods": false,
+          "skipMeals": false,
+          "sweets": false,
+          "lowWater": false,
+          "dailyFruit": false,
+          "notes": ""
+        },
+        "medications": {
+          "enabled": false,
+          "items": "",
+          "notes": ""
+        },
+        "allergies": {
+          "enabled": false,
+          "lactose": false,
+          "gluten": false,
+          "eggs": false,
+          "peanuts": false,
+          "dyes": false,
+          "notes": ""
+        },
+        "record24h": {
+          "enabled": false,
+          "breakfast": "",
+          "morningSnack": "",
+          "lunch": "",
+          "afternoonSnack": "",
+          "dinner": "",
+          "supper": "",
+          "beverages": ""
+        },
+        "familyHistory": {
+          "enabled": false,
+          "notes": ""
+        },
+        "clinicalSigns": {
+          "enabled": false,
+          "notes": ""
+        },
+        "diagnosis": {
+          "enabled": false,
+          "notes": ""
+        },
+        "mealPlan": {
+          "enabled": false,
+          "preset": "Plano Equilibrado",
+          "customFoods": "",
+          "breakfast": "",
+          "snacks": "",
+          "lunchDinner": "",
+          "beverages": "",
+          "weeklyPlan": ""
+        }
+      },
+      "createdAt": "2026-06-19T14:23:42.465Z",
+      "updatedAt": "2026-06-19T14:24:16.009Z",
+      "evaluatedAt": "2026-06-19T14:24:16.009Z",
+      "studentGrade": "Bercario",
+      "studentClassroom": "A",
+      "studentShift": "Tarde",
+      "campaignId": "9bb2da14-784a-4ccf-ba7a-03785c394d2d",
+      "campaignName": "Techno",
+      "campaignStartDate": "2026-06-19",
+      "campaignEndDate": "2026-12-19"
+    },
+    {
+      "id": "ff498176-38a0-4e07-bc78-99af14e0d732",
+      "studentId": "fed8a342-07df-493d-842e-19c7156631d7",
+      "studentName": "JOÃO MIGUEL OLIVEIRA DA SILVA",
+      "schoolId": "9f616d78-36f1-451a-bc49-ca7ebcb172b5",
+      "schoolName": "José de Lima Junior",
+      "nutritionistUserId": "249dff70-3311-4b51-8d3c-45252df9d0f9",
+      "nutritionistId": "f05897db-e102-4508-9582-ce85295a185b",
+      "nutritionistName": "Marcelo Gomes",
+      "crn": "020205558",
+      "status": "Finalizada",
+      "anthropometry": {
+        "weight": "7",
+        "height": "60",
+        "waist": "",
+        "bmi": "19.44"
+      },
+      "sections": {
+        "eatingHabits": {
+          "enabled": true,
+          "friedFoods": false,
+          "skipMeals": false,
+          "sweets": false,
+          "lowWater": false,
+          "dailyFruit": false,
+          "notes": ""
+        },
+        "medications": {
+          "enabled": false,
+          "items": "",
+          "notes": ""
+        },
+        "allergies": {
+          "enabled": false,
+          "lactose": false,
+          "gluten": false,
+          "eggs": false,
+          "peanuts": false,
+          "dyes": false,
+          "notes": ""
+        },
+        "record24h": {
+          "enabled": true,
+          "breakfast": "",
+          "morningSnack": "",
+          "lunch": "",
+          "afternoonSnack": "",
+          "dinner": "",
+          "supper": "",
+          "beverages": ""
+        },
+        "familyHistory": {
+          "enabled": false,
+          "notes": ""
+        },
+        "clinicalSigns": {
+          "enabled": false,
+          "notes": ""
+        },
+        "diagnosis": {
+          "enabled": true,
+          "notes": ""
+        },
+        "mealPlan": {
+          "enabled": false,
+          "preset": "Plano Equilibrado",
+          "customFoods": "",
+          "breakfast": "",
+          "snacks": "",
+          "lunchDinner": "",
+          "beverages": "",
+          "weeklyPlan": ""
+        }
+      },
+      "createdAt": "2026-06-19T14:24:17.952Z",
+      "updatedAt": "2026-06-19T14:24:32.065Z",
+      "evaluatedAt": "2026-06-19T14:24:32.065Z",
+      "studentGrade": "Bercario",
+      "studentClassroom": "A",
+      "studentShift": "Tarde",
+      "campaignId": "9bb2da14-784a-4ccf-ba7a-03785c394d2d",
+      "campaignName": "Techno",
+      "campaignStartDate": "2026-06-19",
+      "campaignEndDate": "2026-12-19"
+    },
+    {
+      "id": "34bac525-8e9b-4c8b-a59a-0387f1ba3ab2",
+      "studentId": "e4f9983e-ff86-46a0-a72c-8dbafa52cbd9",
+      "studentName": "Joao Silva",
+      "schoolId": "9f616d78-36f1-451a-bc49-ca7ebcb172b5",
+      "schoolName": "José de Lima Junior",
+      "nutritionistUserId": "bc796d20-7d6b-4b47-9941-5fdaf2f1890d",
+      "nutritionistId": "79e0e554-ebd7-4d45-8018-178bd159ecf9",
+      "nutritionistName": "Edimar",
+      "crn": "696969",
+      "status": "Finalizada",
+      "anthropometry": {
+        "weight": "32.5",
+        "height": "128",
+        "waist": "58",
+        "bmi": "19.84"
+      },
+      "sections": {
+        "eatingHabits": {
+          "enabled": false,
+          "friedFoods": false,
+          "skipMeals": false,
+          "sweets": false,
+          "lowWater": false,
+          "dailyFruit": false,
+          "notes": ""
+        },
+        "medications": {
+          "enabled": false,
+          "items": "",
+          "notes": ""
+        },
+        "allergies": {
+          "enabled": false,
+          "lactose": false,
+          "gluten": false,
+          "eggs": false,
+          "peanuts": false,
+          "dyes": false,
+          "notes": ""
+        },
+        "record24h": {
+          "enabled": false,
+          "breakfast": "",
+          "morningSnack": "",
+          "lunch": "",
+          "afternoonSnack": "",
+          "dinner": "",
+          "supper": "",
+          "beverages": ""
+        },
+        "familyHistory": {
+          "enabled": false,
+          "notes": ""
+        },
+        "clinicalSigns": {
+          "enabled": false,
+          "notes": ""
+        },
+        "diagnosis": {
+          "enabled": false,
+          "notes": ""
+        },
+        "mealPlan": {
+          "enabled": false,
+          "preset": "Plano Equilibrado",
+          "customFoods": "",
+          "breakfast": "",
+          "snacks": "",
+          "lunchDinner": "",
+          "beverages": "",
+          "weeklyPlan": ""
+        }
+      },
+      "createdAt": "2026-06-25T17:42:49.637Z",
+      "updatedAt": "2026-06-25T17:50:30.459Z",
+      "evaluatedAt": "2026-06-25T17:50:30.459Z",
+      "studentGrade": "1o Ano",
+      "studentClassroom": "A",
+      "studentShift": "Manha",
+      "campaignId": "9bb2da14-784a-4ccf-ba7a-03785c394d2d",
+      "campaignName": "Techno",
+      "campaignStartDate": "2026-06-19",
+      "campaignEndDate": "2026-12-19"
+    },
+    {
+      "id": "162e44cc-1434-4433-92c5-ad08dc7e0b6e",
+      "studentId": "97f9ef96-ab32-4e48-ab86-d8219d97dff2",
+      "studentName": "ELIAS MIGUEL DOS SANTOS",
+      "schoolId": "9f616d78-36f1-451a-bc49-ca7ebcb172b5",
+      "schoolName": "José de Lima Junior",
+      "nutritionistUserId": "bc796d20-7d6b-4b47-9941-5fdaf2f1890d",
+      "nutritionistId": "79e0e554-ebd7-4d45-8018-178bd159ecf9",
+      "nutritionistName": "Edimar",
+      "crn": "696969",
+      "status": "Finalizada",
+      "anthropometry": {
+        "weight": "32.5",
+        "height": "128",
+        "waist": "58",
+        "bmi": "19.84"
+      },
+      "sections": {
+        "eatingHabits": {
+          "enabled": false,
+          "friedFoods": false,
+          "skipMeals": false,
+          "sweets": false,
+          "lowWater": false,
+          "dailyFruit": false,
+          "notes": ""
+        },
+        "medications": {
+          "enabled": false,
+          "items": "",
+          "notes": ""
+        },
+        "allergies": {
+          "enabled": false,
+          "lactose": false,
+          "gluten": false,
+          "eggs": false,
+          "peanuts": false,
+          "dyes": false,
+          "notes": ""
+        },
+        "record24h": {
+          "enabled": false,
+          "breakfast": "",
+          "morningSnack": "",
+          "lunch": "",
+          "afternoonSnack": "",
+          "dinner": "",
+          "supper": "",
+          "beverages": ""
+        },
+        "familyHistory": {
+          "enabled": false,
+          "notes": ""
+        },
+        "clinicalSigns": {
+          "enabled": false,
+          "notes": ""
+        },
+        "diagnosis": {
+          "enabled": false,
+          "notes": ""
+        },
+        "mealPlan": {
+          "enabled": false,
+          "preset": "Plano Equilibrado",
+          "customFoods": "",
+          "breakfast": "",
+          "snacks": "",
+          "lunchDinner": "",
+          "beverages": "",
+          "weeklyPlan": ""
+        }
+      },
+      "createdAt": "2026-06-25T17:50:35.226Z",
+      "updatedAt": "2026-06-25T17:51:39.827Z",
+      "evaluatedAt": "2026-06-25T17:51:39.827Z",
+      "studentGrade": "Bercario",
+      "studentClassroom": "A",
+      "studentShift": "Tarde",
+      "campaignId": "9bb2da14-784a-4ccf-ba7a-03785c394d2d",
+      "campaignName": "Techno",
+      "campaignStartDate": "2026-06-19",
+      "campaignEndDate": "2026-12-19"
+    },
+    {
+      "id": "07ee2627-db5d-4f50-a048-f5cd090b142a",
+      "studentId": "19f8f19d-6c4e-4c7d-9923-8582ca28070b",
+      "studentName": "ETHAN RAVI ARAGÃO DA SILVA",
+      "schoolId": "9f616d78-36f1-451a-bc49-ca7ebcb172b5",
+      "schoolName": "José de Lima Junior",
+      "nutritionistUserId": "bc796d20-7d6b-4b47-9941-5fdaf2f1890d",
+      "nutritionistId": "79e0e554-ebd7-4d45-8018-178bd159ecf9",
+      "nutritionistName": "Edimar",
+      "crn": "696969",
+      "status": "Finalizada",
+      "anthropometry": {
+        "weight": "32.5",
+        "height": "128",
+        "waist": "",
+        "bmi": "19.84",
+        "heightMeters": 1.28,
+        "bmiValue": 19.83642578125
+      },
+      "sections": {
+        "eatingHabits": {
+          "enabled": false,
+          "friedFoods": false,
+          "skipMeals": false,
+          "sweets": false,
+          "lowWater": false,
+          "dailyFruit": false,
+          "notes": ""
+        },
+        "medications": {
+          "enabled": false,
+          "items": "",
+          "notes": ""
+        },
+        "allergies": {
+          "enabled": false,
+          "lactose": false,
+          "gluten": false,
+          "eggs": false,
+          "peanuts": false,
+          "dyes": false,
+          "notes": ""
+        },
+        "record24h": {
+          "enabled": false,
+          "breakfast": "",
+          "morningSnack": "",
+          "lunch": "",
+          "afternoonSnack": "",
+          "dinner": "",
+          "supper": "",
+          "beverages": ""
+        },
+        "familyHistory": {
+          "enabled": false,
+          "notes": ""
+        },
+        "clinicalSigns": {
+          "enabled": false,
+          "notes": ""
+        },
+        "diagnosis": {
+          "enabled": false,
+          "notes": ""
+        },
+        "mealPlan": {
+          "enabled": false,
+          "preset": "Plano Equilibrado",
+          "customFoods": "",
+          "breakfast": "",
+          "snacks": "",
+          "lunchDinner": "",
+          "beverages": "",
+          "weeklyPlan": ""
+        }
+      },
+      "createdAt": "2026-06-25T18:35:18.789Z",
+      "updatedAt": "2026-06-25T18:38:00.570Z",
+      "evaluatedAt": "2026-06-25T18:38:00.570Z",
+      "studentGrade": "Bercario",
+      "studentClassroom": "A",
+      "studentShift": "Tarde",
+      "campaignId": "9bb2da14-784a-4ccf-ba7a-03785c394d2d",
+      "campaignName": "Techno",
+      "campaignStartDate": "2026-06-19",
+      "campaignEndDate": "2026-12-19",
+      "birthDate": "2025-09-17",
+      "sex": "MASCULINO",
+      "ageYears": 0,
+      "ageMonths": 9,
+      "ageLabel": "9 mes(es)",
+      "interpretationMethod": "IMC por idade e sexo",
+      "typeClassification": "INFANTIL_IMC_IDADE_SEXO",
+      "referenceAnthropometric": "OMS/SISVAN",
+      "zScore": 1.7527052452628364,
+      "percentile": 96.01737350539045,
+      "nutritionalClassification": "risco de sobrepeso",
+      "nutritionalAlert": true,
+      "technicalObservation": "Necessaria revisao tecnica por nutricionista ou profissional responsavel.",
+      "technicalAlerts": [
+        "Necessaria revisao tecnica por nutricionista ou profissional responsavel."
+      ],
+      "resultDisclaimer": "O resultado apresentado e uma classificacao antropometrica de triagem e acompanhamento nutricional. Ele nao substitui avaliacao clinica, diagnostico medico ou conduta individualizada de profissional habilitado."
+    }
+  ],
   "settings": {
-    "systemName": "ABDESM",
-    "version": "1.6.0-beta.260105",
+    "systemName": "NUTRATIVA",
+    "version": "2026.06 Local",
     "timezone": "America/Sao_Paulo",
     "language": "pt-BR",
     "maintenanceMode": "false",
@@ -4485,7 +5561,7 @@
     "phone": "",
     "address": "",
     "site": "",
-    "sidebarColor": "Amarelo queimado",
+    "sidebarColor": "Verde grafite",
     "smtpHost": "",
     "smtpPort": "",
     "smtpUser": "",
@@ -4493,6 +5569,6 @@
     "googleMapsApi": "",
     "aiApi": "",
     "bannerActive": "false",
-    "bannerHtml": "<p>Bem-vindo ao sistema  de acompanhamento Nutricional da ABDESM.</p>"
+    "bannerHtml": "<p>Bem-vindo ao NUTRATIVA.</p>"
   }
 }

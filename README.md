@@ -1,6 +1,6 @@
-# Copia local ABDESM
+# NUTRATIVA
 
-Esta pasta contem uma copia navegavel local do sistema ABDESM, criada para evolucao futura com frontend em React/Vite e backend local em Express.
+Esta pasta contem a versao local do NUTRATIVA, uma plataforma de operacao e acompanhamento nutricional com frontend em React/Vite e backend local em Express.
 
 ## Como executar
 
@@ -12,7 +12,14 @@ npm run dev
 O comando `npm run dev` inicia:
 
 - API local: `http://127.0.0.1:3001`
-- Frontend: `http://127.0.0.1:5173/#/login`
+- Frontend: `http://127.0.0.1:5180/#/login`
+
+Endereco local fixo:
+
+- O frontend agora fica travado em `http://127.0.0.1:5180/#/login`.
+- A API local continua fixa em `http://127.0.0.1:3001`.
+- Se a porta `5180` ja estiver em uso, o Vite passa a exibir erro de inicializacao em vez de trocar automaticamente para outra porta. Isso evita que o link mude a cada reinicio.
+- No navegador, use apenas `http://127.0.0.1:5180/#/login`. O frontend encaminha automaticamente as chamadas `/api` para a porta `3001`.
 
 ## Acesso local
 

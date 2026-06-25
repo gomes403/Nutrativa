@@ -44,22 +44,33 @@ import {
   UserCog,
   Users,
 } from "lucide-react";
-import { Bar } from "react-chartjs-2";
+import { Bar, Line } from "react-chartjs-2";
 import { CircleMarker, MapContainer, Popup, TileLayer } from "react-leaflet";
 import {
   BarElement,
+  BarController,
   CategoryScale,
   Chart as ChartJS,
   LinearScale,
   Legend,
+  LineController,
+  LineElement,
+  PointElement,
   Tooltip,
 } from "chart.js";
 import "leaflet/dist/leaflet.css";
+import {
+  buildBmiSummary,
+  buildBmiGrowthChartModel,
+  calculateAgeOnDate,
+  calculateBmi,
+  evaluateAnthropometricStatus,
+} from "./anthropometry";
 import "./styles.css";
 
-ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
+ChartJS.register(CategoryScale, LinearScale, BarController, BarElement, LineController, LineElement, PointElement, Tooltip, Legend);
 
-const apiBase = "http://127.0.0.1:3001";
+const apiBase = "";
 const authStorageKey = "abdesm-auth-token";
 const consentStorageKey = "abdesm-login-consent";
 const emptyData = {
@@ -86,12 +97,12 @@ const emptyData = {
     recentEvaluations: [],
   },
   settings: {
-    systemName: "ABDESM",
-    version: "1.6.0-beta.260105",
+    systemName: "NUTRATIVA",
+    version: "2026.06 Local",
     timezone: "America/Sao_Paulo",
     language: "pt-BR",
     maintenanceMode: false,
-    sidebarColor: "Amarelo queimado",
+    sidebarColor: "Verde grafite",
   },
 };
 
@@ -119,7 +130,6 @@ const nutritionistMenu = [
   { label: "Dashboard", icon: BarChart3, path: "/dashboard" },
   { label: "Escolas", icon: Building2, path: "/escolas" },
   { label: "Avaliacoes", icon: ClipboardList, path: "/avaliacoes" },
-  { label: "Relatorio", icon: FileText, path: "/relatorios/nutricionista" },
 ];
 
 const educationTypeOptions = [
@@ -249,6 +259,7 @@ function App() {
       return defaultConsentState;
     }
   });
+  const activeCampaign = useMemo(() => getActiveCampaign(data.campaigns), [data.campaigns]);
 
   const showToast = (text, type = "success") => {
     setToast({ text, type, id: Date.now() });
@@ -382,6 +393,12 @@ function App() {
     if (!currentUser && route !== "/login") go("/login");
   }, [authReady, currentUser, route, go]);
 
+  useEffect(() => {
+    const systemName = data.settings?.systemName || "NUTRATIVA";
+    const viewLabel = currentUser ? resolveRouteLabel(route) : "Login";
+    document.title = `${systemName} | ${viewLabel}`;
+  }, [currentUser, data.settings, route]);
+
   const requestRealLocation = async () => {
     if (!("geolocation" in navigator)) {
       throw new Error("Este navegador nao suporta geolocalizacao.");
@@ -492,6 +509,26 @@ function App() {
   };
 
   const saveRecord = async (collection, payload, id) => {
+    if (collection === "campaigns") {
+      const validationError = validateCampaignRecord(payload);
+      if (validationError) {
+        showToast(validationError, "error");
+        return false;
+      }
+
+      const nextCampaign = id ? { ...(findById(data.campaigns, id) || {}), ...payload, id } : payload;
+      const blockingCampaign = isCampaignClosed(nextCampaign) ? null : getBlockingCampaign(data.campaigns, nextCampaign);
+      if (blockingCampaign) {
+        showToast(`A campanha "${blockingCampaign.name}" ainda nao foi finalizada. Feche a campanha atual antes de criar uma nova.`, "error");
+        return false;
+      }
+    }
+
+    if (collection === "evaluations" && !activeCampaign) {
+      showToast("Nenhuma campanha ativa foi encontrada. O administrador precisa cadastrar uma campanha com data de inicio e fim para liberar as avaliacoes.", "error");
+      return false;
+    }
+
     try {
       const response = await apiFetch(`/api/${collection}${id ? `/${id}` : ""}`, {
         method: id ? "PUT" : "POST",
@@ -499,7 +536,7 @@ function App() {
         body: JSON.stringify(payload),
       });
       if (response.status === 401) return false;
-      if (!response.ok) throw new Error("Nao foi possivel salvar o registro.");
+      if (!response.ok) throw new Error(await readError(response, "Nao foi possivel salvar o registro."));
       await refresh();
       showToast("Registro salvo com sucesso.");
       return true;
@@ -621,11 +658,11 @@ function App() {
   }
 
   return (
-    <DataContext.Provider value={{ currentUser, data, refresh, saveRecord, deleteRecord, clearCollection, importRecords, saveSettings, resetUserPassword, showToast, logout }}>
+    <DataContext.Provider value={{ currentUser, data, activeCampaign, refresh, saveRecord, deleteRecord, clearCollection, importRecords, saveSettings, resetUserPassword, showToast, logout }}>
       <Shell route={route} go={go} onLogout={logout}>
         {toast && <div className={`toast ${toast.type}`}>{toast.text}</div>}
         {isBootstrapping && <div className="alert">Carregando dados do sistema...</div>}
-        {apiUnavailable && <div className="alert error">API local indisponivel. Verifique se o backend esta ativo em http://127.0.0.1:3001.</div>}
+        {apiUnavailable && <div className="alert error">API local indisponivel. Verifique se o backend do sistema esta ativo.</div>}
         <Page route={route} go={go} />
       </Shell>
     </DataContext.Provider>
@@ -668,8 +705,8 @@ function Login({ onLogin, onAcceptConsent, onRejectOptional, consentState, error
       <section className="login-panel">
         <BrandMark />
         <form className="login-card" onSubmit={submit}>
-          <h1>Bem-vindo! Acesse sua conta</h1>
-          <p className="login-hint">Entre com o login e a senha cadastrados para liberar o painel administrativo.</p>
+          <h1>NUTRATIVA</h1>
+          <p className="login-hint">Entre com suas credenciais para acessar a central de operacoes nutricionais.</p>
           <label className="input-icon">
             <input name="login" type="text" placeholder="Digite seu login" autoComplete="username" required />
             <User size={18} />
@@ -714,8 +751,8 @@ function Shell({ route, go, onLogout, children }) {
         <div className="brand" onClick={() => go("/dashboard")}>
           <BrandMark small />
           <div>
-            <strong>{data.settings.systemName || "ABDESM"}</strong>
-            <span>Versao {data.settings.version || "1.6.0-beta.260105"}</span>
+            <strong>{data.settings.systemName || "NUTRATIVA"}</strong>
+            <span>Edicao {data.settings.version || "2026.06 Local"}</span>
           </div>
         </div>
         <nav>
@@ -723,12 +760,12 @@ function Shell({ route, go, onLogout, children }) {
         </nav>
         <div className="sidebar-bottom">
           <div className="news">
-            <span>NOTICIAS</span>
-            <a className="news-source" href={data.newsSource?.url} target="_blank" rel="noreferrer">{data.newsSource?.label || "Site oficial do CFN"}</a>
+            <span>RADAR NUTRI</span>
+            <a className="news-source" href={data.newsSource?.url} target="_blank" rel="noreferrer">{data.newsSource?.label || "Atualizacoes oficiais do CFN"}</a>
             <NewsCarousel items={data.news || []} />
           </div>
           <button className={`side-link ${route === "/configuracoes" ? "active" : ""}`} onClick={() => go("/configuracoes")}>
-            <Settings size={19} /> Configuracoes
+            <Settings size={19} /> Ajustes
           </button>
         </div>
       </aside>
@@ -742,13 +779,13 @@ function Shell({ route, go, onLogout, children }) {
             </div>
           </div>
           <div className="topbar-actions">
-            <div className="topbar-status"><span />Sistema online</div>
+            <div className="topbar-status"><span />Operacao ativa</div>
             <button className="profile" onClick={() => go("/profile")}><span className="avatar"><User size={16} /></span> {currentUser?.name || "Usuario"}</button>
             <button className="profile logout-btn" onClick={onLogout}><LogOut size={16} /> Sair</button>
           </div>
         </header>
         <main className="content">{children}</main>
-        <footer><span>© 2026 ABDESM - Direitos reservados.</span><em>Desenvolvido por <b>avansa.com.br</b></em></footer>
+        <footer><span>(c) 2026 NUTRATIVA</span><em>Painel local para operacao e monitoramento nutricional</em></footer>
       </div>
     </div>
   );
@@ -845,12 +882,13 @@ function Page({ route, go }) {
   if (route.match(/^\/nutricionistas\/.+\/edit$/)) return <NutritionistForm id={id} go={go} />;
   if (route === "/avaliacoes") return <NutritionEvaluationsPage go={go} />;
   if (route.match(/^\/avaliacoes\/.+$/)) return <NutritionEvaluationForm studentId={route.split("/")[2]} go={go} />;
-  if (route === "/relatorios/nutricionista") return <NutritionistReportsPage go={go} />;
-  if (route.match(/^\/relatorios\/nutricionista\/.+$/)) return <NutritionistReportDetail evaluationId={route.split("/")[3]} go={go} />;
-  if (route === "/relatorios") return currentUser?.profile === "Nutricionista" ? <NutritionistReportsPage go={go} /> : <Reports go={go} />;
+  if (route === "/relatorios/nutricionista") return <NutritionEvaluationsPage go={go} />;
+  if (route.match(/^\/relatorios\/nutricionista\/.+$/)) return <NutritionEvaluationsPage go={go} />;
+  if (route === "/relatorios") return currentUser?.profile === "Nutricionista" ? <NutritionEvaluationsPage go={go} /> : <Reports go={go} />;
   if (route === "/relatorios/escolas") return <ReportSchools />;
   if (route === "/relatorios/avaliacoes") return <ReportEvaluations />;
-  if (route === "/relatorios/individual") return <ReportIndividual />;
+  if (route === "/relatorios/individual") return <ReportIndividual go={go} />;
+  if (route.match(/^\/relatorios\/individual\/.+$/)) return <AdminIndividualReportDetail evaluationId={route.split("/")[3]} go={go} />;
   if (route === "/relatorios/campanha") return <ReportCampaign />;
   if (route === "/configuracoes") return <SettingsPage />;
   return <Dashboard go={go} />;
@@ -885,13 +923,13 @@ function Dashboard({ go }) {
     datasets: [{ label: "Total de Alunos", data: studentsByYear.map((item) => item.total), backgroundColor: "#68b35a", borderColor: "#3d8f41", borderWidth: 1, borderRadius: 10 }],
   }), [studentsByYear]);
   return (
-    <PageCard title="Painel de Controle" crumb="Admin / Dashboard">
-      <div className="alert success">Bem-vindo! Voce esta logado como <b>{currentUser?.profile || "Administrador"}</b>.</div>
+    <PageCard title="Central de Operacoes" crumb="Admin / Dashboard">
+      <div className="alert success">Ambiente administrativo ativo. Perfil conectado: <b>{currentUser?.profile || "Administrador"}</b>.</div>
       <div className="stats">
         <Stat tone="amber" icon={Building2} value={data.dashboard.schools} label="Escolas Cadastradas" onClick={() => go("/escolas")} />
         <Stat tone="blue" icon={GraduationCap} value={data.dashboard.students} label="Alunos Cadastrados" onClick={() => go("/alunos")} />
         <Stat tone="emerald" icon={UserCog} value={data.dashboard.nutritionists} label="Nutricionistas" onClick={() => go("/nutricionistas")} />
-        <Stat tone="rose" icon={Users} value={data.dashboard.users} label="Usuarios Totais" onClick={() => go("/usuarios")} />
+        <Stat tone="rose" icon={Users} value={data.dashboard.users} label="Contas Ativas" onClick={() => go("/usuarios")} />
       </div>
       <div className="grid two">
         <Panel title="Alunos por Ano Letivo">{studentsByYear.length ? <div className="chart-box"><Bar data={chartData} options={chartOptions} /></div> : <EmptyState text="Nenhum dado disponivel." />}</Panel>
@@ -899,7 +937,7 @@ function Dashboard({ go }) {
         <Panel title="Top 5 Escolas com mais alunos"><Table headers={["Escola", "Total de Alunos"]} rows={(data.dashboard.topSchools || []).map((s) => [s.name, s.students || 0])} empty="Nenhuma escola cadastrada." /></Panel>
         <Panel title="Ultimas Avaliacoes Realizadas"><EmptyState text="Nenhuma avaliacao registrada." /></Panel>
       </div>
-      <Panel title="Mapa de Usuarios Conectados">
+      <Panel title="Mapa de Acessos em Tempo Real">
         <ConnectedUsersMap users={data.activeUsers || []} />
       </Panel>
     </PageCard>
@@ -907,14 +945,16 @@ function Dashboard({ go }) {
 }
 
 function NutritionistDashboard({ go }) {
-  const { data, currentUser } = useAppData();
+  const { data, currentUser, activeCampaign } = useAppData();
   const context = useMemo(() => getNutritionistContext(data, currentUser), [data, currentUser]);
-  const pendingStudents = context.linkedStudents.filter((student) => !context.evaluationByStudentId[student.id]).length;
+  const campaignEvaluations = useMemo(() => getEvaluationsForCampaign(context.myEvaluations, activeCampaign), [context.myEvaluations, activeCampaign]);
+  const campaignEvaluationByStudentId = useMemo(() => indexEvaluationsByStudent(campaignEvaluations), [campaignEvaluations]);
+  const pendingStudents = context.linkedStudents.filter((student) => !campaignEvaluationByStudentId[student.id]).length;
   const evaluationsBySchool = context.linkedSchools.map((school) => [
     school.name,
-    context.myEvaluations.filter((evaluation) => String(evaluation.schoolId) === String(school.id)).length,
+    campaignEvaluations.filter((evaluation) => String(evaluation.schoolId) === String(school.id)).length,
   ]);
-  const evaluationsByMonth = Object.entries(context.myEvaluations.reduce((acc, evaluation) => {
+  const evaluationsByMonth = Object.entries(campaignEvaluations.reduce((acc, evaluation) => {
     const label = formatMonthYear(evaluation.evaluatedAt || evaluation.updatedAt || evaluation.createdAt);
     acc[label] = (acc[label] || 0) + 1;
     return acc;
@@ -928,9 +968,14 @@ function NutritionistDashboard({ go }) {
   return (
     <PageCard title="Dashboard - Nutricionista" crumb="Nutricionista / Dashboard">
       <div className="alert success">Bem-vindo, <b>{currentUser?.name}</b>. Este painel exibe apenas escolas, alunos e avaliacoes vinculadas ao seu atendimento.</div>
+      {activeCampaign && (
+        <div className="alert success">
+          Campanha ativa: <strong>{activeCampaign.name}</strong> | Periodo de {formatDate(activeCampaign.startDate)} ate {formatDate(activeCampaign.endDate)}.
+        </div>
+      )}
       <div className="stats">
         <Stat tone="blue" icon={GraduationCap} value={context.linkedStudents.length} label="Alunos Vinculados" onClick={() => go("/avaliacoes")} />
-        <Stat tone="emerald" icon={ClipboardList} value={context.myEvaluations.length} label="Avaliacoes Finalizadas" onClick={() => go("/relatorios/nutricionista")} />
+        <Stat tone="emerald" icon={ClipboardList} value={campaignEvaluations.length} label="Avaliacoes Finalizadas" onClick={() => go("/avaliacoes")} />
         <Stat tone="amber" icon={Building2} value={context.linkedSchools.length} label="Escolas Vinculadas" onClick={() => go("/escolas")} />
         <Stat tone="rose" icon={UserCog} value={pendingStudents} label="Alunos Pendentes" onClick={() => go("/avaliacoes")} />
       </div>
@@ -945,7 +990,7 @@ function NutritionistDashboard({ go }) {
           <Table
             headers={["Status", "Total"]}
             rows={[
-              ["Finalizadas", context.myEvaluations.length],
+              ["Finalizadas", campaignEvaluations.length],
               ["Pendentes", pendingStudents],
             ]}
             empty="Nenhum dado disponivel."
@@ -960,7 +1005,7 @@ function NutritionistDashboard({ go }) {
 }
 
 function NutritionEvaluationsPage({ go }) {
-  const { data, currentUser } = useAppData();
+  const { data, currentUser, activeCampaign } = useAppData();
   const context = useMemo(() => getNutritionistContext(data, currentUser), [data, currentUser]);
   const [filters, setFilters] = useState({
     schoolId: "",
@@ -969,10 +1014,16 @@ function NutritionEvaluationsPage({ go }) {
     classroom: "",
     search: "",
   });
+  const campaignEvaluations = useMemo(() => getEvaluationsForCampaign(context.myEvaluations, activeCampaign), [context.myEvaluations, activeCampaign]);
+  const campaignEvaluationByStudentId = useMemo(() => indexEvaluationsByStudent(campaignEvaluations), [campaignEvaluations]);
+  const studentsToEvaluate = useMemo(
+    () => context.linkedStudents.filter((student) => !campaignEvaluationByStudentId[student.id]),
+    [context.linkedStudents, campaignEvaluationByStudentId],
+  );
 
   const filteredStudents = useMemo(() => {
     const search = normalizeCsvKey(filters.search);
-    return context.linkedStudents.filter((student) => {
+    return studentsToEvaluate.filter((student) => {
       const school = findById(data.schools, student.schoolId);
       const matchesSearch = !search || [
         student.name,
@@ -986,18 +1037,39 @@ function NutritionEvaluationsPage({ go }) {
       const matchesClassroom = !filters.classroom || String(student.classroom) === String(filters.classroom);
       return matchesSearch && matchesSchool && matchesGrade && matchesShift && matchesClassroom;
     });
-  }, [context.linkedStudents, data.schools, filters]);
+  }, [studentsToEvaluate, data.schools, filters]);
 
-  const gradeOptions = [["", "Todas as series"], ...uniqueValues(context.linkedStudents.map((student) => student.grade)).map((value) => [value, value])];
-  const shiftOptions = [["", "Todos os turnos"], ...uniqueValues(context.linkedStudents.map((student) => student.shift)).map((value) => [value, value])];
-  const classroomOptions = [["", "Todas as turmas"], ...uniqueValues(context.linkedStudents.map((student) => student.classroom)).map((value) => [value, value])];
+  const gradeOptions = [["", "Todas as series"], ...uniqueValues(studentsToEvaluate.map((student) => student.grade)).map((value) => [value, value])];
+  const shiftOptions = [["", "Todos os turnos"], ...uniqueValues(studentsToEvaluate.map((student) => student.shift)).map((value) => [value, value])];
+  const classroomOptions = [["", "Todas as turmas"], ...uniqueValues(studentsToEvaluate.map((student) => student.classroom)).map((value) => [value, value])];
 
   if (!context.nutritionistLink) {
     return <PageCard title="Avaliacoes" crumb="Nutricionista / Avaliacoes"><EmptyState text="Nenhum vinculo de nutricionista foi encontrado para o seu usuario." /></PageCard>;
   }
 
+  if (!activeCampaign) {
+    const latestCampaign = getLatestCampaign(data.campaigns);
+    return (
+      <PageCard title="Alunos para Avaliacao" crumb="Nutricionista / Avaliacoes">
+        <div className="alert error">
+          Nenhuma campanha ativa foi encontrada. O administrador precisa cadastrar uma campanha com data de inicio e fim vigente para liberar as avaliacoes.
+          {latestCampaign ? ` Ultima campanha registrada: ${latestCampaign.name} (${formatDate(latestCampaign.startDate)} a ${formatDate(latestCampaign.endDate)}).` : ""}
+        </div>
+        <EmptyState text="As avaliacoes estao bloqueadas ate que exista uma campanha ativa." />
+      </PageCard>
+    );
+  }
+
   return (
     <PageCard title="Alunos para Avaliacao" crumb="Nutricionista / Avaliacoes">
+      <div className="alert success">
+        Campanha ativa: <strong>{activeCampaign.name}</strong> | Periodo de {formatDate(activeCampaign.startDate)} ate {formatDate(activeCampaign.endDate)}.
+      </div>
+      {!studentsToEvaluate.length && (
+        <div className="alert success">
+          Todos os alunos vinculados ao seu atendimento ja foram avaliados nesta campanha.
+        </div>
+      )}
       <div className="students-filter-panel nutrition-filters">
         <div className="students-filter-grid">
           <SelectField
@@ -1050,7 +1122,6 @@ function NutritionEvaluationsPage({ go }) {
           headers={["Nome", "Serie", "Turma", "Escola", "Nutricionista", "Acoes"]}
           rows={filteredStudents.map((student) => {
             const school = findById(data.schools, student.schoolId);
-            const evaluation = context.evaluationByStudentId[student.id];
             return [
               student.name,
               student.grade || "-",
@@ -1059,11 +1130,10 @@ function NutritionEvaluationsPage({ go }) {
               currentUser?.name || "-",
               <div className="actions">
                 <button className="mini warn" type="button" onClick={() => go(`/avaliacoes/${student.id}`)}>Avaliar</button>
-                {evaluation && <button className="mini secondary" type="button" onClick={() => go(`/relatorios/nutricionista/${evaluation.id}`)}>Relatorio</button>}
               </div>,
             ];
           })}
-          empty="Nenhum aluno vinculado foi encontrado para os filtros selecionados."
+          empty={studentsToEvaluate.length ? "Nenhum aluno pendente foi encontrado para os filtros selecionados." : "Todos os alunos vinculados ja foram avaliados nesta campanha."}
         />
       </DataBlock>
     </PageCard>
@@ -1071,23 +1141,50 @@ function NutritionEvaluationsPage({ go }) {
 }
 
 function NutritionEvaluationForm({ studentId, go }) {
-  const { data, currentUser, saveRecord } = useAppData();
+  const { data, currentUser, saveRecord, activeCampaign, showToast } = useAppData();
   const context = useMemo(() => getNutritionistContext(data, currentUser), [data, currentUser]);
+  const campaignEvaluations = useMemo(() => getEvaluationsForCampaign(context.myEvaluations, activeCampaign), [context.myEvaluations, activeCampaign]);
   const student = findById(context.linkedStudents, studentId);
   const school = student ? findById(data.schools, student.schoolId) : null;
   const currentUserRecord = findById(data.users, currentUser?.id);
-  const existingEvaluation = context.myEvaluations.find((evaluation) => String(evaluation.studentId) === String(studentId));
+  const existingEvaluation = campaignEvaluations.find((evaluation) => String(evaluation.studentId) === String(studentId));
   const [draft, setDraft] = useState(() => createEvaluationDraft(existingEvaluation, student, currentUser, context.nutritionistLink, school, currentUserRecord));
 
   useEffect(() => {
     setDraft(createEvaluationDraft(existingEvaluation, student, currentUser, context.nutritionistLink, school, currentUserRecord));
   }, [existingEvaluation, student, currentUser, context.nutritionistLink, school, currentUserRecord]);
 
+  const evaluatedAt = draft.evaluatedAt || existingEvaluation?.evaluatedAt || new Date().toISOString();
+  const anthropometryResult = useMemo(() => evaluateAnthropometricStatus({
+    weight: draft.anthropometry?.weight,
+    height: draft.anthropometry?.height,
+    birthDate: student?.birthDate,
+    evaluationDate: evaluatedAt,
+    sex: student?.sex,
+    schoolId: student?.schoolId,
+    schoolName: school?.name,
+    grade: student?.grade,
+    classroom: student?.classroom,
+  }), [draft.anthropometry?.height, draft.anthropometry?.weight, evaluatedAt, school?.name, student?.birthDate, student?.classroom, student?.grade, student?.schoolId, student?.sex]);
+
+  const bmi = anthropometryResult.bmiDisplay || calculateBmi(draft.anthropometry?.weight, draft.anthropometry?.height);
+
   if (!student) {
     return <PageCard title="Avaliacao Nutricional" crumb="Nutricionista / Avaliacoes"><EmptyState text="Este aluno nao esta vinculado ao seu atendimento nutricional." /></PageCard>;
   }
 
-  const bmi = calculateBmi(draft.anthropometry.weight, draft.anthropometry.height);
+  if (!activeCampaign) {
+    return (
+      <PageCard title="Avaliacao Nutricional" crumb="Nutricionista / Avaliacoes">
+        <div className="alert error">
+          Esta avaliacao esta bloqueada porque nao existe campanha ativa com data de inicio e fim vigente.
+        </div>
+        <div className="form-actions">
+          <button className="btn outline muted-btn" type="button" onClick={() => go("/avaliacoes")}>Voltar</button>
+        </div>
+      </PageCard>
+    );
+  }
 
   const updateAnthropometry = (field, value) => {
     setDraft((current) => ({
@@ -1117,6 +1214,12 @@ function NutritionEvaluationForm({ studentId, go }) {
   };
 
   const saveEvaluation = async () => {
+    if (anthropometryResult.errors.length) {
+      showToast(anthropometryResult.errors.join(" "), "error");
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
     const payload = {
       ...draft,
       status: "Finalizada",
@@ -1127,16 +1230,37 @@ function NutritionEvaluationForm({ studentId, go }) {
       studentClassroom: student.classroom,
       studentShift: student.shift,
       schoolName: school?.name || "",
+      campaignId: activeCampaign.id,
+      campaignName: activeCampaign.name,
+      campaignStartDate: activeCampaign.startDate,
+      campaignEndDate: activeCampaign.endDate,
       nutritionistUserId: currentUser.id,
       nutritionistId: context.nutritionistLink?.id || currentUser.id,
       nutritionistName: currentUser.name,
       crn: context.nutritionistLink?.crn || currentUserRecord?.crn || "",
       anthropometry: {
         ...draft.anthropometry,
+        heightMeters: anthropometryResult.heightMeters ?? null,
+        bmiValue: anthropometryResult.bmi ?? null,
         bmi,
       },
-      evaluatedAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      birthDate: student.birthDate || "",
+      sex: anthropometryResult.normalizedSex || student.sex || "",
+      ageYears: anthropometryResult.age?.years ?? null,
+      ageMonths: anthropometryResult.age?.totalMonths ?? null,
+      ageLabel: anthropometryResult.age?.label || "",
+      interpretationMethod: anthropometryResult.methodLabel || "",
+      typeClassification: anthropometryResult.typeClassification || "",
+      referenceAnthropometric: anthropometryResult.referenceLabel || "",
+      zScore: anthropometryResult.zScore ?? null,
+      percentile: anthropometryResult.percentile ?? null,
+      nutritionalClassification: anthropometryResult.classificationLabel || "",
+      nutritionalAlert: anthropometryResult.needsTechnicalReview,
+      technicalObservation: anthropometryResult.technicalReviewMessage || "",
+      technicalAlerts: anthropometryResult.alerts || [],
+      resultDisclaimer: anthropometryResult.disclaimer,
+      evaluatedAt: nowIso,
+      updatedAt: nowIso,
     };
 
     const saved = await saveRecord("evaluations", payload, existingEvaluation?.id);
@@ -1147,7 +1271,6 @@ function NutritionEvaluationForm({ studentId, go }) {
     <PageCard title="Avaliacao Nutricional do Aluno" crumb="Nutricionista / Avaliacoes">
       <div className="evaluation-actions">
         <button className="btn outline muted-btn" type="button" onClick={() => go("/avaliacoes")}>Sair do Atendimento</button>
-        {existingEvaluation && <button className="btn outline success-text" type="button" onClick={() => go(`/relatorios/nutricionista/${existingEvaluation.id}`)}>Ver Relatorio</button>}
         <button className="btn primary" type="button" onClick={saveEvaluation}><Save size={16} /> Salvar Avaliacao</button>
       </div>
 
@@ -1156,9 +1279,9 @@ function NutritionEvaluationForm({ studentId, go }) {
           <h2>Dados do Aluno</h2>
           <div className="form-grid">
             <ReadOnlyField label="Nome" value={student.name} />
-            <ReadOnlyField label="Sexo" value={student.sex || "-"} />
+            <ReadOnlyField label="Sexo" value={anthropometryResult.normalizedSex || student.sex || "-"} />
             <ReadOnlyField label="Data de Nascimento" value={formatDate(student.birthDate) || "-"} />
-            <ReadOnlyField label="Idade" value={formatAge(student.birthDate)} />
+            <ReadOnlyField label="Idade na Avaliacao" value={anthropometryResult.age?.label || "-"} />
             <ReadOnlyField label="Escola" value={school?.name || "-"} wide />
             <ReadOnlyField label="Serie / Turma" value={`${student.grade || "-"} - ${student.classroom || "-"}`} wide />
           </div>
@@ -1176,10 +1299,32 @@ function NutritionEvaluationForm({ studentId, go }) {
               <input value={draft.anthropometry.height} onChange={(event) => updateAnthropometry("height", event.target.value)} placeholder="Ex: 128" />
             </label>
             <ReadOnlyField label="IMC (calculado)" value={bmi || "-"} />
+            <ReadOnlyField label="Metodo" value={anthropometryResult.methodLabel || "-"} />
+            <ReadOnlyField label="Classificacao" value={anthropometryResult.classificationLabel || "-"} />
+            <ReadOnlyField label="Referencia" value={anthropometryResult.referenceLabel || "-"} />
             <label className="field">
               <span>Circunferencia Abdominal (cm)</span>
               <input value={draft.anthropometry.waist} onChange={(event) => updateAnthropometry("waist", event.target.value)} placeholder="Ex: 58" />
             </label>
+            {!anthropometryResult.typeClassification || anthropometryResult.typeClassification === "ADULTO_IMC" ? null : (
+              <>
+                <ReadOnlyField label="Escore-z" value={anthropometryResult.zScoreDisplay || "-"} />
+                <ReadOnlyField label="Percentil" value={anthropometryResult.percentileDisplay || "-"} />
+              </>
+            )}
+          </div>
+          {anthropometryResult.errors.length > 0 && (
+            <div className="alert error">
+              <strong>Validacao obrigatoria:</strong> {anthropometryResult.errors.join(" ")}
+            </div>
+          )}
+          {anthropometryResult.alerts.length > 0 && (
+            <div className="alert warn">
+              <strong>Alerta tecnico:</strong> {anthropometryResult.alerts.join(" ")}
+            </div>
+          )}
+          <div className="alert success">
+            <strong>Aviso:</strong> {anthropometryResult.disclaimer}
           </div>
         </section>
 
@@ -1283,21 +1428,91 @@ function NutritionistReportsPage({ go }) {
   );
 }
 
-function NutritionistReportDetail({ evaluationId, go }) {
+function NutritionistReportDetail({ evaluationId, go, scope = "nutritionist" }) {
   const { data, currentUser } = useAppData();
   const context = useMemo(() => getNutritionistContext(data, currentUser), [data, currentUser]);
-  const evaluation = context.myEvaluations.find((item) => String(item.id) === String(evaluationId));
+  const evaluations = scope === "admin" ? (data.evaluations || []) : context.myEvaluations;
+  const evaluation = evaluations.find((item) => String(item.id) === String(evaluationId));
   const student = evaluation ? findById(data.students, evaluation.studentId) : null;
   const school = evaluation ? findById(data.schools, evaluation.schoolId) : null;
+  const campaign = evaluation ? findCampaignForEvaluation(data.campaigns, evaluation) : null;
+  const anthropometryResult = useMemo(() => evaluateAnthropometricStatus({
+    weight: evaluation?.anthropometry?.weight,
+    height: evaluation?.anthropometry?.height,
+    birthDate: evaluation?.birthDate || student?.birthDate,
+    evaluationDate: evaluation?.evaluatedAt || evaluation?.updatedAt || evaluation?.createdAt,
+    sex: evaluation?.sex || student?.sex,
+    schoolId: evaluation?.schoolId,
+    schoolName: evaluation?.schoolName || school?.name,
+    grade: evaluation?.studentGrade || student?.grade,
+    classroom: evaluation?.studentClassroom || student?.classroom,
+  }), [evaluation, school?.name, student?.birthDate, student?.classroom, student?.grade, student?.sex]);
+  const bmiSummary = useMemo(() => buildBmiSummary(anthropometryResult), [anthropometryResult]);
+  const pageTitle = scope === "admin" ? "Relatorio Nutricional Individual" : "Relatorio do Nutricionista";
+  const crumb = scope === "admin" ? "Admin / Relatorios" : "Nutricionista / Relatorio";
+  const backRoute = scope === "admin" ? "/relatorios/individual" : "/avaliacoes";
 
   if (!evaluation) {
-    return <PageCard title="Relatorio do Nutricionista" crumb="Nutricionista / Relatorio"><EmptyState text="Relatorio nao encontrado ou sem permissao de acesso." /></PageCard>;
+    return <PageCard title={pageTitle} crumb={crumb}><EmptyState text="Relatorio nao encontrado ou sem permissao de acesso." /></PageCard>;
   }
 
+  const detailItems = [
+    { label: "Sexo", value: anthropometryResult.normalizedSex || evaluation.sex || student?.sex, hideOnPrint: true },
+    { label: "Nascimento", value: formatDate(student?.birthDate), hideOnPrint: true },
+    { label: "Idade na avaliacao", value: anthropometryResult.age?.label || formatAge(student?.birthDate, evaluation.evaluatedAt || evaluation.updatedAt || evaluation.createdAt), hideOnPrint: true },
+    { label: "Turno", value: student?.shift, hideOnPrint: true },
+    { label: "Peso", value: hasContent(evaluation.anthropometry?.weight) ? `${evaluation.anthropometry.weight} kg` : "" },
+    { label: "Altura", value: hasContent(evaluation.anthropometry?.height) ? `${evaluation.anthropometry.height} cm` : "" },
+    { label: "IMC", value: anthropometryResult.bmiDisplay || evaluation.anthropometry?.bmi },
+    { label: "Metodo", value: anthropometryResult.methodLabel, hideOnPrint: true },
+    { label: "Classificacao", value: anthropometryResult.classificationLabel },
+    { label: "Referencia", value: anthropometryResult.referenceLabel, hideOnPrint: true },
+    { label: "Escore-z", value: anthropometryResult.zScoreDisplay, hideOnPrint: true },
+    { label: "Percentil", value: anthropometryResult.percentileDisplay, hideOnPrint: true },
+    { label: "Circ. Abdominal", value: hasContent(evaluation.anthropometry?.waist) ? `${evaluation.anthropometry.waist} cm` : "", hideOnPrint: true },
+  ].filter((item) => hasContent(item.value));
+
+  const eatingHabitsItems = buildEatingHabitsReport(evaluation.sections?.eatingHabits);
+  const eatingHabitsNotes = evaluation.sections?.eatingHabits?.notes;
+  const hasEatingHabits = eatingHabitsItems.length > 0 || hasContent(eatingHabitsNotes);
+
+  const medicationItems = evaluation.sections?.medications?.items;
+  const medicationNotes = evaluation.sections?.medications?.notes;
+  const hasMedications = hasContent(medicationItems) || hasContent(medicationNotes);
+
+  const allergyItems = buildAllergiesReport(evaluation.sections?.allergies);
+  const allergyNotes = evaluation.sections?.allergies?.notes;
+  const hasAllergies = allergyItems.length > 0 || hasContent(allergyNotes);
+
+  const record24hItems = [
+    { label: "Cafe da Manha", value: evaluation.sections?.record24h?.breakfast },
+    { label: "Lanche da Manha", value: evaluation.sections?.record24h?.morningSnack },
+    { label: "Almoco", value: evaluation.sections?.record24h?.lunch },
+    { label: "Lanche da Tarde", value: evaluation.sections?.record24h?.afternoonSnack },
+    { label: "Jantar", value: evaluation.sections?.record24h?.dinner },
+    { label: "Ceia", value: evaluation.sections?.record24h?.supper },
+    { label: "Bebidas", value: evaluation.sections?.record24h?.beverages, wide: true },
+  ].filter((item) => hasContent(item.value));
+
+  const mealPlanItems = [
+    { label: "Plano Base", value: evaluation.sections?.mealPlan?.preset },
+    { label: "Alimentos Personalizados", value: evaluation.sections?.mealPlan?.customFoods, wide: true },
+    { label: "Cafe da Manha / Lanches", value: evaluation.sections?.mealPlan?.breakfast },
+    { label: "Lanches complementares", value: evaluation.sections?.mealPlan?.snacks },
+    { label: "Almoco / Jantar", value: evaluation.sections?.mealPlan?.lunchDinner },
+    { label: "Bebidas / Ceia", value: evaluation.sections?.mealPlan?.beverages },
+    { label: "Plano semanal sugerido", value: evaluation.sections?.mealPlan?.weeklyPlan, wide: true },
+  ].filter((item) => hasContent(item.value));
+
+  const campaignName = evaluation.campaignName || campaign?.name || "";
+  const campaignStartDate = evaluation.campaignStartDate || campaign?.startDate || "";
+  const campaignEndDate = evaluation.campaignEndDate || campaign?.endDate || "";
+  const campaignPeriod = campaignStartDate && campaignEndDate ? `${formatDate(campaignStartDate)} ate ${formatDate(campaignEndDate)}` : "";
+
   return (
-    <PageCard title="Relatorio da Avaliacao Nutricional" crumb="Nutricionista / Relatorio">
+    <PageCard title="Relatorio da Avaliacao Nutricional" crumb={crumb}>
       <div className="evaluation-actions">
-        <button className="btn outline muted-btn" type="button" onClick={() => go("/relatorios/nutricionista")}>Voltar</button>
+        <button className="btn outline muted-btn" type="button" onClick={() => go(backRoute)}>Voltar</button>
         <button className="btn outline success-text" type="button" onClick={() => window.print()}>Imprimir</button>
       </div>
       <div className="report-sheet">
@@ -1310,72 +1525,128 @@ function NutritionistReportDetail({ evaluationId, go }) {
             <span>Data da avaliacao: {formatDateTime(evaluation.evaluatedAt || evaluation.updatedAt || evaluation.createdAt)}</span>
             <span>Escola: {evaluation.schoolName || school?.name || "-"}</span>
             <span>Serie / Turma: {evaluation.studentGrade || student?.grade || "-"} - {student?.classroom || "-"}</span>
+            {hasContent(campaignName) && <span>Campanha: {campaignName}</span>}
+            {hasContent(campaignPeriod) && <span>Periodo da campanha: {campaignPeriod}</span>}
           </div>
         </div>
 
-        <div className="report-grid-detail">
-          <ReportInfo label="Sexo" value={student?.sex || "-"} />
-          <ReportInfo label="Nascimento" value={formatDate(student?.birthDate) || "-"} />
-          <ReportInfo label="Idade" value={formatAge(student?.birthDate)} />
-          <ReportInfo label="Turno" value={student?.shift || "-"} />
-          <ReportInfo label="Peso" value={evaluation.anthropometry?.weight ? `${evaluation.anthropometry.weight} kg` : "-"} />
-          <ReportInfo label="Altura" value={evaluation.anthropometry?.height ? `${evaluation.anthropometry.height} cm` : "-"} />
-          <ReportInfo label="IMC" value={evaluation.anthropometry?.bmi || "-"} />
-          <ReportInfo label="Circ. Abdominal" value={evaluation.anthropometry?.waist ? `${evaluation.anthropometry.waist} cm` : "-"} />
-        </div>
-
-        <ReportSection title="Habitos Alimentares" enabled={evaluation.sections?.eatingHabits?.enabled}>
-          <ul className="report-list">
-            {buildEatingHabitsReport(evaluation.sections?.eatingHabits).map((item) => <li key={item}>{item}</li>)}
-          </ul>
-          <p>{evaluation.sections?.eatingHabits?.notes || "Sem observacoes adicionais."}</p>
-        </ReportSection>
-
-        <ReportSection title="Uso de Medicamentos" enabled={evaluation.sections?.medications?.enabled}>
-          <p>{evaluation.sections?.medications?.items || "Nenhum medicamento informado."}</p>
-          <p>{evaluation.sections?.medications?.notes || "Sem observacoes adicionais."}</p>
-        </ReportSection>
-
-        <ReportSection title="Alergias / Intolerancias" enabled={evaluation.sections?.allergies?.enabled}>
-          <ul className="report-list">
-            {buildAllergiesReport(evaluation.sections?.allergies).map((item) => <li key={item}>{item}</li>)}
-          </ul>
-          <p>{evaluation.sections?.allergies?.notes || "Sem observacoes adicionais."}</p>
-        </ReportSection>
-
-        <ReportSection title="Recordatorio Alimentar - Ultimas 24h" enabled={evaluation.sections?.record24h?.enabled}>
+        {!!detailItems.length && (
           <div className="report-grid-detail">
-            <ReportInfo label="Cafe da Manha" value={evaluation.sections?.record24h?.breakfast || "-"} />
-            <ReportInfo label="Lanche da Manha" value={evaluation.sections?.record24h?.morningSnack || "-"} />
-            <ReportInfo label="Almoco" value={evaluation.sections?.record24h?.lunch || "-"} />
-            <ReportInfo label="Lanche da Tarde" value={evaluation.sections?.record24h?.afternoonSnack || "-"} />
-            <ReportInfo label="Jantar" value={evaluation.sections?.record24h?.dinner || "-"} />
-            <ReportInfo label="Ceia" value={evaluation.sections?.record24h?.supper || "-"} />
-            <ReportInfo label="Bebidas" value={evaluation.sections?.record24h?.beverages || "-"} wide />
+            {detailItems.map((item) => <ReportInfo key={item.label} label={item.label} value={item.value} wide={item.wide} className={item.hideOnPrint ? "print-hidden" : ""} />)}
+          </div>
+        )}
+
+        <PediatricGrowthCharts anthropometryResult={anthropometryResult} />
+
+        {bmiSummary && (
+          <section className="bmi-summary">
+            <div className="bmi-summary-header">
+              <div>
+                <span className="bmi-eyebrow">Resultados do IMC</span>
+                <h3>{bmiSummary.title}</h3>
+                <p>{bmiSummary.subtitle}</p>
+              </div>
+              <div className="bmi-summary-badges">
+                <div className={`bmi-badge tone-${bmiSummary.tone}`}>
+                  <span>Classificacao</span>
+                  <strong>{bmiSummary.label}</strong>
+                </div>
+                <div className="bmi-badge neutral">
+                  <span>IMC</span>
+                  <strong>{bmiSummary.valueLabel}</strong>
+                </div>
+              </div>
+            </div>
+
+            <div className="bmi-scale-block">
+              <div className="bmi-scale">
+                {bmiSummary.legend.map((item) => (
+                  <span key={item.label} className={`bmi-scale-band ${item.tone}`} />
+                ))}
+                <span className="bmi-scale-marker" style={{ left: `${bmiSummary.markerPercent}%` }} />
+              </div>
+              <div className="bmi-scale-legend">
+                {bmiSummary.legend.map((item) => (
+                  <div key={item.label} className="bmi-legend-item">
+                    <span className={`bmi-dot ${item.tone}`} />
+                    <div>
+                      <strong>{item.range}</strong>
+                      <small>{item.label}</small>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="bmi-summary-copy">
+              <div className="bmi-copy-card">
+                <h4>O que isso significa para a familia?</h4>
+                <p>{bmiSummary.description}</p>
+              </div>
+              <div className="bmi-copy-card">
+                <h4>Orientacao inicial</h4>
+                <p>{bmiSummary.guidance}</p>
+              </div>
+            </div>
+
+            <div className={`bmi-alert tone-${bmiSummary.tone}`}>
+              <strong>Importante:</strong> {bmiSummary.note}
+            </div>
+            {anthropometryResult.alerts.length > 0 && (
+              <div className="bmi-report-alerts">
+                <strong>Alertas tecnicos</strong>
+                <ul className="report-list">
+                  {anthropometryResult.alerts.map((item) => <li key={item}>{item}</li>)}
+                </ul>
+              </div>
+            )}
+          </section>
+        )}
+
+        <ReportSection title="Habitos Alimentares" enabled={evaluation.sections?.eatingHabits?.enabled && hasEatingHabits}>
+          {!!eatingHabitsItems.length && (
+            <ul className="report-list">
+              {eatingHabitsItems.map((item) => <li key={item}>{item}</li>)}
+            </ul>
+          )}
+          {hasContent(eatingHabitsNotes) && <p>{eatingHabitsNotes}</p>}
+        </ReportSection>
+
+        <ReportSection title="Uso de Medicamentos" enabled={evaluation.sections?.medications?.enabled && hasMedications}>
+          {hasContent(medicationItems) && <p>{medicationItems}</p>}
+          {hasContent(medicationNotes) && <p>{medicationNotes}</p>}
+        </ReportSection>
+
+        <ReportSection title="Alergias / Intolerancias" enabled={evaluation.sections?.allergies?.enabled && hasAllergies}>
+          {!!allergyItems.length && (
+            <ul className="report-list">
+              {allergyItems.map((item) => <li key={item}>{item}</li>)}
+            </ul>
+          )}
+          {hasContent(allergyNotes) && <p>{allergyNotes}</p>}
+        </ReportSection>
+
+        <ReportSection title="Recordatorio Alimentar - Ultimas 24h" enabled={evaluation.sections?.record24h?.enabled && record24hItems.length > 0}>
+          <div className="report-grid-detail">
+            {record24hItems.map((item) => <ReportInfo key={item.label} label={item.label} value={item.value} wide={item.wide} />)}
           </div>
         </ReportSection>
 
-        <ReportSection title="Historico Familiar" enabled={evaluation.sections?.familyHistory?.enabled}>
-          <p>{evaluation.sections?.familyHistory?.notes || "Nao informado."}</p>
+        <ReportSection title="Historico Familiar" enabled={evaluation.sections?.familyHistory?.enabled && hasContent(evaluation.sections?.familyHistory?.notes)}>
+          <p>{evaluation.sections?.familyHistory?.notes}</p>
         </ReportSection>
 
-        <ReportSection title="Sinais Clinicos Observados" enabled={evaluation.sections?.clinicalSigns?.enabled}>
-          <p>{evaluation.sections?.clinicalSigns?.notes || "Nao informado."}</p>
+        <ReportSection title="Sinais Clinicos Observados" enabled={evaluation.sections?.clinicalSigns?.enabled && hasContent(evaluation.sections?.clinicalSigns?.notes)}>
+          <p>{evaluation.sections?.clinicalSigns?.notes}</p>
         </ReportSection>
 
-        <ReportSection title="Laudo / Diagnostico Nutricional" enabled={evaluation.sections?.diagnosis?.enabled}>
-          <p>{evaluation.sections?.diagnosis?.notes || "Nao informado."}</p>
+        <ReportSection title="Laudo / Diagnostico Nutricional" enabled={evaluation.sections?.diagnosis?.enabled && hasContent(evaluation.sections?.diagnosis?.notes)}>
+          <p>{evaluation.sections?.diagnosis?.notes}</p>
         </ReportSection>
 
-        <ReportSection title="Plano Alimentar Interativo" enabled={evaluation.sections?.mealPlan?.enabled}>
+        <ReportSection title="Plano Alimentar Interativo" enabled={evaluation.sections?.mealPlan?.enabled && mealPlanItems.length > 0}>
           <div className="report-grid-detail">
-            <ReportInfo label="Plano Base" value={evaluation.sections?.mealPlan?.preset || "-"} />
-            <ReportInfo label="Alimentos Personalizados" value={evaluation.sections?.mealPlan?.customFoods || "-"} wide />
-            <ReportInfo label="Cafe da Manha / Lanches" value={evaluation.sections?.mealPlan?.breakfast || "-"} />
-            <ReportInfo label="Lanches complementares" value={evaluation.sections?.mealPlan?.snacks || "-"} />
-            <ReportInfo label="Almoco / Jantar" value={evaluation.sections?.mealPlan?.lunchDinner || "-"} />
-            <ReportInfo label="Bebidas / Ceia" value={evaluation.sections?.mealPlan?.beverages || "-"} />
-            <ReportInfo label="Plano semanal sugerido" value={evaluation.sections?.mealPlan?.weeklyPlan || "-"} wide />
+            {mealPlanItems.map((item) => <ReportInfo key={item.label} label={item.label} value={item.value} wide={item.wide} />)}
           </div>
         </ReportSection>
 
@@ -1387,6 +1658,10 @@ function NutritionistReportDetail({ evaluationId, go }) {
       </div>
     </PageCard>
   );
+}
+
+function AdminIndividualReportDetail({ evaluationId, go }) {
+  return <NutritionistReportDetail evaluationId={evaluationId} go={go} scope="admin" />;
 }
 
 const chartOptions = {
@@ -1987,31 +2262,92 @@ function YearForm({ id, go }) {
 }
 
 function Campaigns({ go }) {
-  const { data, deleteRecord } = useAppData();
+  const { data, deleteRecord, saveRecord, showToast } = useAppData();
+  const blockingCampaign = getBlockingCampaign(data.campaigns);
+  const closeCampaign = async (campaign) => {
+    if (!campaign || isCampaignClosed(campaign)) return;
+    if (!window.confirm(`Encerrar a campanha "${campaign.name}" agora?`)) return;
+
+    await saveRecord("campaigns", {
+      ...campaign,
+      status: "Fechada",
+      updatedAt: new Date().toISOString(),
+    }, campaign.id);
+  };
+
   return (
-    <SimpleList
-      title="Campanhas"
-      crumb="Campanhas"
-      action="Nova Campanha"
-      onAction={() => go("/campanhas/create")}
-      headers={["Nome", "Ano Letivo", "Inicio", "Fim", "Status", "Acoes"]}
-      rows={data.campaigns.map((campaign) => [campaign.name, campaign.year, formatDate(campaign.startDate), formatDate(campaign.endDate), campaign.status, <Actions noView edit={() => go(`/campanhas/${campaign.id}/edit`)} remove={() => deleteRecord("campaigns", campaign.id)} />])}
-      search="Buscar campanha..."
-      empty="Nenhuma campanha cadastrada."
-    />
+    <PageCard title="Campanhas" crumb="Campanhas">
+      <Toolbar>
+        <button
+          className="btn success"
+          type="button"
+          disabled={!!blockingCampaign}
+          onClick={() => {
+            if (blockingCampaign) {
+              showToast(`A campanha "${blockingCampaign.name}" ainda nao foi finalizada.`, "error");
+              return;
+            }
+            go("/campanhas/create");
+          }}
+        >
+          <PlusCircle size={17} /> Nova Campanha
+        </button>
+      </Toolbar>
+      {blockingCampaign && (
+        <div className="alert error">
+          A campanha <strong>{blockingCampaign.name}</strong> ainda nao foi finalizada. Uma nova campanha so pode ser criada apos o encerramento da atual.
+        </div>
+      )}
+      <SearchBox placeholder="Buscar campanha..." />
+      <DataBlock>
+        <Table
+          headers={["Nome", "Ano Letivo", "Inicio", "Fim", "Status", "Acoes"]}
+          rows={data.campaigns.map((campaign) => [
+            campaign.name,
+            campaign.year,
+            formatDate(campaign.startDate),
+            formatDate(campaign.endDate),
+            getCampaignStatusLabel(campaign),
+            <Actions
+              noView
+              edit={() => go(`/campanhas/${campaign.id}/edit`)}
+              remove={() => deleteRecord("campaigns", campaign.id)}
+              extra={isCampaignClosed(campaign) ? null : { label: "Encerrar", onClick: () => closeCampaign(campaign) }}
+            />,
+          ])}
+          empty="Nenhuma campanha cadastrada."
+        />
+      </DataBlock>
+    </PageCard>
   );
 }
 
 function CampaignForm({ id, go }) {
   const { data, saveRecord } = useAppData();
   const campaign = findById(data.campaigns, id);
+  const blockingCampaign = getBlockingCampaign(data.campaigns, { id });
+
+  if (!id && blockingCampaign) {
+    return (
+      <PageCard title="Nova Campanha" crumb="Campanhas">
+        <div className="alert error">
+          A campanha <strong>{blockingCampaign.name}</strong> ainda nao foi finalizada. Finalize a campanha atual antes de cadastrar uma nova.
+        </div>
+        <div className="form-actions">
+          <button className="btn outline muted-btn" type="button" onClick={() => go("/campanhas")}>Voltar para Campanhas</button>
+          <button className="btn primary" type="button" onClick={() => go(`/campanhas/${blockingCampaign.id}/edit`)}>Editar Campanha Atual</button>
+        </div>
+      </PageCard>
+    );
+  }
+
   return (
     <RecordForm title={id ? "Editar Campanha" : "Nova Campanha"} crumb="Campanhas" collection="campaigns" id={id} initial={campaign} go={go} back="/campanhas" saveRecord={saveRecord}>
       <FormSection title="Informacoes da Campanha">
         <Field name="name" label="Nome" required defaultValue={campaign?.name} />
-        <SelectField name="year" label="Ano Letivo" options={[["", "-- Selecione --"], ...data.years.map((year) => [year.year, year.year])]} defaultValue={campaign?.year} />
-        <Field name="startDate" label="Data Inicio" type="date" defaultValue={campaign?.startDate} />
-        <Field name="endDate" label="Data Fim" type="date" defaultValue={campaign?.endDate} />
+        <SelectField name="year" label="Ano Letivo" options={[["", "-- Selecione --"], ...data.years.map((year) => [year.year, year.year])]} defaultValue={campaign?.year} required />
+        <Field name="startDate" label="Data Inicio" type="date" defaultValue={campaign?.startDate} required />
+        <Field name="endDate" label="Data Fim" type="date" defaultValue={campaign?.endDate} required />
         <SelectField name="status" label="Status" options={["Pendente", "Aberta", "Fechada"]} defaultValue={campaign?.status || "Pendente"} />
       </FormSection>
     </RecordForm>
@@ -2036,6 +2372,12 @@ function Nutritionists({ go }) {
 function NutritionistForm({ id, go }) {
   const { data, saveRecord } = useAppData();
   const item = findById(data.nutritionists, id);
+  const [selectedSchoolIds, setSelectedSchoolIds] = useState(() => item?.schoolIds || []);
+
+  useEffect(() => {
+    setSelectedSchoolIds(item?.schoolIds || []);
+  }, [item?.id]);
+
   return (
     <RecordForm
       title={id ? "Editar Nutricionista" : "Novo Nutricionista"}
@@ -2056,7 +2398,13 @@ function NutritionistForm({ id, go }) {
         <SelectField name="userId" label="Usuario" options={[["", "Selecione..."], ...data.users.map((u) => [u.id, u.name])]} required defaultValue={item?.userId} />
         <Field name="phone" label="Telefone" defaultValue={item?.phone} />
         <Field name="crn" label="CRN" defaultValue={item?.crn} />
-        <MultiSelect name="schoolIds" label="Escolas" options={data.schools.map((school) => [school.id, formatSchoolLabel(school)])} defaultValue={item?.schoolIds || []} wide />
+        <SchoolAssignmentsField
+          label="Escolas"
+          name="schoolIds"
+          schools={data.schools}
+          selectedSchoolIds={selectedSchoolIds}
+          onChange={setSelectedSchoolIds}
+        />
       </FormSection>
     </RecordForm>
   );
@@ -2077,15 +2425,254 @@ function Reports({ go }) {
 }
 
 function ReportSchools() {
-  return <ReportFrame title="Relatorio por Escola (IMC)" fields={["Estado", "Cidade", "Municipio", "Zona"]} actions={["PDF", "Imprimir"]} empty="Nenhuma avaliacao encontrada para os filtros selecionados." />;
+  const { data } = useAppData();
+  const [filters, setFilters] = useState({
+    state: "",
+    city: "",
+    municipality: "",
+    zone: "",
+  });
+
+  const schoolsWithEvaluations = useMemo(() => {
+    const indexedSchools = Object.fromEntries((data.schools || []).map((school) => [school.id, school]));
+    const grouped = new Map();
+
+    for (const evaluation of data.evaluations || []) {
+      const school = indexedSchools[evaluation.schoolId];
+      if (!school) continue;
+
+      if (!grouped.has(school.id)) {
+        grouped.set(school.id, {
+          schoolId: school.id,
+          schoolName: evaluation.schoolName || school.name || "-",
+          state: school.state || "",
+          city: school.city || "",
+          municipality: school.district || "",
+          zone: school.zone || "",
+          evaluationCount: 0,
+          bmiValues: [],
+          latestCampaign: "",
+          latestEvaluationDate: "",
+        });
+      }
+
+      const current = grouped.get(school.id);
+      current.evaluationCount += 1;
+
+      const bmiValue = Number(String(evaluation?.anthropometry?.bmi || "").replace(",", "."));
+      if (Number.isFinite(bmiValue) && bmiValue > 0) {
+        current.bmiValues.push(bmiValue);
+      }
+
+      const latestDate = evaluation.evaluatedAt || evaluation.updatedAt || evaluation.createdAt || "";
+      if (!current.latestEvaluationDate || new Date(latestDate) > new Date(current.latestEvaluationDate)) {
+        current.latestEvaluationDate = latestDate;
+        current.latestCampaign = evaluation.campaignName || current.latestCampaign || "-";
+      }
+    }
+
+    return Array.from(grouped.values())
+      .map((item) => ({
+        ...item,
+        averageBmi: item.bmiValues.length ? (item.bmiValues.reduce((sum, value) => sum + value, 0) / item.bmiValues.length) : null,
+      }))
+      .sort((left, right) => left.schoolName.localeCompare(right.schoolName, "pt-BR"));
+  }, [data.evaluations, data.schools]);
+
+  const availableStates = useMemo(() => uniqueValues(schoolsWithEvaluations.map((item) => item.state)), [schoolsWithEvaluations]);
+  const stateFilteredRows = useMemo(() => (
+    filters.state
+      ? schoolsWithEvaluations.filter((item) => item.state === filters.state)
+      : schoolsWithEvaluations
+  ), [filters.state, schoolsWithEvaluations]);
+  const availableCities = useMemo(() => uniqueValues(stateFilteredRows.map((item) => item.city)), [stateFilteredRows]);
+  const cityFilteredRows = useMemo(() => (
+    filters.city
+      ? stateFilteredRows.filter((item) => item.city === filters.city)
+      : stateFilteredRows
+  ), [filters.city, stateFilteredRows]);
+  const availableMunicipalities = useMemo(() => uniqueValues(cityFilteredRows.map((item) => item.municipality)), [cityFilteredRows]);
+  const municipalityFilteredRows = useMemo(() => (
+    filters.municipality
+      ? cityFilteredRows.filter((item) => item.municipality === filters.municipality)
+      : cityFilteredRows
+  ), [cityFilteredRows, filters.municipality]);
+  const availableZones = useMemo(() => uniqueValues(municipalityFilteredRows.map((item) => item.zone)), [municipalityFilteredRows]);
+
+  const filteredRows = useMemo(() => municipalityFilteredRows.filter((item) => (
+    !filters.zone || item.zone === filters.zone
+  )), [filters.zone, municipalityFilteredRows]);
+
+  const updateFilter = (field, value) => {
+    setFilters((current) => {
+      if (field === "state") return { state: value, city: "", municipality: "", zone: "" };
+      if (field === "city") return { ...current, city: value, municipality: "", zone: "" };
+      if (field === "municipality") return { ...current, municipality: value, zone: "" };
+      return { ...current, [field]: value };
+    });
+  };
+
+  const resetFilters = () => {
+    setFilters({ state: "", city: "", municipality: "", zone: "" });
+  };
+
+  return (
+    <PageCard title="Relatorio por Escola (IMC)" crumb="Relatorios" icon={<ClipboardList className="title-icon" />}>
+      <div className="report-filter">
+        <SelectField label="Estado" value={filters.state} onChange={(event) => updateFilter("state", event.target.value)} options={[["", "Todos os estados"], ...availableStates.map((value) => [value, value])]} />
+        <SelectField label="Cidade" value={filters.city} onChange={(event) => updateFilter("city", event.target.value)} options={[["", "Todas as cidades"], ...availableCities.map((value) => [value, value])]} />
+        <SelectField label="Municipio" value={filters.municipality} onChange={(event) => updateFilter("municipality", event.target.value)} options={[["", "Todos os municipios"], ...availableMunicipalities.map((value) => [value, value])]} />
+        <SelectField label="Zona" value={filters.zone} onChange={(event) => updateFilter("zone", event.target.value)} options={[["", "Todas as zonas"], ...availableZones.map((value) => [value, value])]} />
+        <div className="button-row">
+          <button className="btn outline danger-text" type="button" onClick={() => window.print()}>PDF</button>
+          <button className="btn outline success-text" type="button" onClick={() => window.print()}>Imprimir</button>
+          <button className="btn outline primary-text" type="button" onClick={resetFilters}>Limpar</button>
+        </div>
+      </div>
+
+      {filteredRows.length ? (
+        <DataBlock>
+          <Table
+            headers={["Escola", "Estado", "Cidade", "Municipio", "Zona", "Avaliacoes", "IMC Medio", "Ultima Campanha", "Ultima Avaliacao"]}
+            rows={filteredRows.map((item) => [
+              item.schoolName,
+              item.state || "-",
+              item.city || "-",
+              item.municipality || "-",
+              item.zone || "-",
+              item.evaluationCount,
+              Number.isFinite(item.averageBmi) ? item.averageBmi.toFixed(2) : "-",
+              item.latestCampaign || "-",
+              formatDateTime(item.latestEvaluationDate) || "-",
+            ])}
+            empty="Nenhuma avaliacao encontrada para os filtros selecionados."
+          />
+        </DataBlock>
+      ) : (
+        <div className="alert warning-light">Nenhuma avaliacao encontrada para os filtros selecionados.</div>
+      )}
+    </PageCard>
+  );
 }
 
 function ReportEvaluations() {
   return <ReportFrame title="Relatorio de Avaliacoes por Aluno" fields={["Tipo de Relatorio", "Escola", "Turma", "Serie", "Sexo", "IMC minimo", "IMC maximo", "Data Inicio", "Data Fim"]} actions={["Filtrar", "PDF", "CSV"]} empty="Nenhuma avaliacao encontrada com os criterios selecionados." />;
 }
 
-function ReportIndividual() {
-  return <ReportFrame title="Relatorio Nutricional Individual" fields={["Escola", "Campanha", "Turno", "Serie", "Turma", "Sexo", "Data Inicio", "Data Fim", "Aluno"]} actions={["Filtrar", "Imprimir"]} empty="Nenhuma avaliacao encontrada com os criterios selecionados." />;
+function ReportIndividual({ go }) {
+  const { data } = useAppData();
+  const [filters, setFilters] = useState({
+    school: "",
+    campaign: "",
+    shift: "",
+    grade: "",
+    classroom: "",
+    sex: "",
+    student: "",
+    startDate: "",
+    endDate: "",
+  });
+
+  const evaluationRows = useMemo(() => (data.evaluations || []).map((evaluation) => {
+    const student = findById(data.students, evaluation.studentId);
+    const school = findById(data.schools, evaluation.schoolId);
+    return {
+      evaluation,
+      student,
+      school,
+      schoolName: evaluation.schoolName || school?.name || "-",
+      campaignName: evaluation.campaignName || findCampaignForEvaluation(data.campaigns, evaluation)?.name || "-",
+      shift: evaluation.studentShift || student?.shift || "",
+      grade: evaluation.studentGrade || student?.grade || "",
+      classroom: evaluation.studentClassroom || student?.classroom || "",
+      sex: evaluation.sex || student?.sex || "",
+      studentName: evaluation.studentName || student?.name || "-",
+      evaluatedAt: evaluation.evaluatedAt || evaluation.updatedAt || evaluation.createdAt || "",
+    };
+  }), [data.campaigns, data.evaluations, data.schools, data.students]);
+
+  const schoolOptions = useMemo(() => [["", "Todas as escolas"], ...uniqueValues(evaluationRows.map((item) => item.schoolName)).map((value) => [value, value])], [evaluationRows]);
+  const campaignOptions = useMemo(() => [["", "Todas as campanhas"], ...uniqueValues(evaluationRows.map((item) => item.campaignName)).map((value) => [value, value])], [evaluationRows]);
+  const shiftOptions = useMemo(() => [["", "Todos os turnos"], ...uniqueValues(evaluationRows.map((item) => item.shift)).map((value) => [value, value])], [evaluationRows]);
+  const gradeOptions = useMemo(() => [["", "Todas as series"], ...uniqueValues(evaluationRows.map((item) => item.grade)).map((value) => [value, value])], [evaluationRows]);
+  const classroomOptions = useMemo(() => [["", "Todas as turmas"], ...uniqueValues(evaluationRows.map((item) => item.classroom)).map((value) => [value, value])], [evaluationRows]);
+  const sexOptions = useMemo(() => [["", "Todos os sexos"], ...uniqueValues(evaluationRows.map((item) => item.sex)).map((value) => [value, value])], [evaluationRows]);
+  const studentOptions = useMemo(() => [["", "Todos os alunos"], ...uniqueValues(evaluationRows.map((item) => item.studentName)).map((value) => [value, value])], [evaluationRows]);
+
+  const filteredRows = useMemo(() => evaluationRows.filter((item) => {
+    const evaluationDate = String(item.evaluatedAt || "").slice(0, 10);
+    if (filters.school && item.schoolName !== filters.school) return false;
+    if (filters.campaign && item.campaignName !== filters.campaign) return false;
+    if (filters.shift && item.shift !== filters.shift) return false;
+    if (filters.grade && item.grade !== filters.grade) return false;
+    if (filters.classroom && item.classroom !== filters.classroom) return false;
+    if (filters.sex && item.sex !== filters.sex) return false;
+    if (filters.student && item.studentName !== filters.student) return false;
+    if (filters.startDate && (!evaluationDate || evaluationDate < filters.startDate)) return false;
+    if (filters.endDate && (!evaluationDate || evaluationDate > filters.endDate)) return false;
+    return true;
+  }), [evaluationRows, filters]);
+
+  const updateFilter = (field, value) => {
+    setFilters((current) => ({ ...current, [field]: value }));
+  };
+
+  const clearFilters = () => {
+    setFilters({
+      school: "",
+      campaign: "",
+      shift: "",
+      grade: "",
+      classroom: "",
+      sex: "",
+      student: "",
+      startDate: "",
+      endDate: "",
+    });
+  };
+
+  return (
+    <PageCard title="Relatorio Nutricional Individual" crumb="Admin / Relatorios" icon={<ClipboardList className="title-icon" />}>
+      <div className="report-filter">
+        <SelectField label="Escola" value={filters.school} onChange={(event) => updateFilter("school", event.target.value)} options={schoolOptions} />
+        <SelectField label="Campanha" value={filters.campaign} onChange={(event) => updateFilter("campaign", event.target.value)} options={campaignOptions} />
+        <SelectField label="Turno" value={filters.shift} onChange={(event) => updateFilter("shift", event.target.value)} options={shiftOptions} />
+        <SelectField label="Serie" value={filters.grade} onChange={(event) => updateFilter("grade", event.target.value)} options={gradeOptions} />
+        <SelectField label="Turma" value={filters.classroom} onChange={(event) => updateFilter("classroom", event.target.value)} options={classroomOptions} />
+        <SelectField label="Sexo" value={filters.sex} onChange={(event) => updateFilter("sex", event.target.value)} options={sexOptions} />
+        <label className="field">
+          <span>Data Inicio</span>
+          <input type="date" value={filters.startDate} onChange={(event) => updateFilter("startDate", event.target.value)} />
+        </label>
+        <label className="field">
+          <span>Data Fim</span>
+          <input type="date" value={filters.endDate} onChange={(event) => updateFilter("endDate", event.target.value)} />
+        </label>
+        <SelectField label="Aluno" value={filters.student} onChange={(event) => updateFilter("student", event.target.value)} options={studentOptions} />
+        <div className="button-row">
+          <button className="btn outline primary-text" type="button" onClick={clearFilters}>Limpar</button>
+          <button className="btn outline success-text" type="button" onClick={() => window.print()}>Imprimir</button>
+        </div>
+      </div>
+      <DataBlock>
+        <Table
+          headers={["Aluno", "Escola", "Campanha", "Serie", "Turno", "Data", "Acoes"]}
+          rows={filteredRows.map((item) => [
+            item.studentName,
+            item.schoolName,
+            item.campaignName,
+            item.grade || "-",
+            item.shift || "-",
+            formatDateTime(item.evaluatedAt),
+            <div className="actions">
+              <button className="mini info" type="button" onClick={() => go(`/relatorios/individual/${item.evaluation.id}`)}>Ver Relatorio</button>
+            </div>,
+          ])}
+          empty="Nenhuma avaliacao encontrada com os criterios selecionados."
+        />
+      </DataBlock>
+    </PageCard>
+  );
 }
 
 function ReportCampaign() {
@@ -2113,7 +2700,7 @@ function SettingsPage() {
     await saveSettings(readForm(event.currentTarget));
   };
   return (
-    <PageCard title="Configuracoes do Sistema" crumb="Configuracoes">
+    <PageCard title="Preferencias da Plataforma" crumb="Configuracoes">
       <form onSubmit={submit}>
         <FormSection title="Identidade e Branding">
           <Field name="systemName" label="Nome do Sistema" defaultValue={settings.systemName} />
@@ -2131,7 +2718,7 @@ function SettingsPage() {
           <Field name="address" label="Endereco" wide defaultValue={settings.address} />
           <Field name="site" label="Site Oficial" defaultValue={settings.site} />
         </FormSection>
-        <FormSection title="Configuracoes do Sistema">
+        <FormSection title="Experiencia da Plataforma">
           <SelectField name="language" label="Idioma Padrao" options={["pt-BR", "en-US"]} defaultValue={settings.language} />
           <SelectField name="timezone" label="Fuso Horario" options={["America/Sao_Paulo", "America/Manaus", "America/Cuiaba", "UTC"]} defaultValue={settings.timezone} />
           <SelectField name="maintenanceMode" label="Modo de Manutencao" options={[["false", "Desativado"], ["true", "Ativado"]]} defaultValue={String(settings.maintenanceMode)} />
@@ -2145,11 +2732,11 @@ function SettingsPage() {
           <Field name="googleMapsApi" label="API Google Maps" defaultValue={settings.googleMapsApi} />
           <Field name="aiApi" label="API IA" defaultValue={settings.aiApi} />
         </FormSection>
-        <FormSection title="Banner Inicial">
+        <FormSection title="Mensagem de Boas-vindas">
           <SelectField name="bannerActive" label="Banner Ativo" options={[["false", "Nao"], ["true", "Sim"]]} defaultValue={String(settings.bannerActive || false)} />
           <EditorMock defaultValue={settings.bannerHtml} />
         </FormSection>
-        <button className="btn primary save-wide" type="submit"><Save size={17} /> Salvar Configuracoes</button>
+        <button className="btn primary save-wide" type="submit"><Save size={17} /> Salvar Preferencias</button>
       </form>
     </PageCard>
   );
@@ -2219,11 +2806,12 @@ function ReportSection({ title, enabled, children }) {
   );
 }
 
-function ReportInfo({ label, value, wide }) {
+function ReportInfo({ label, value, wide, className = "" }) {
+  if (!hasContent(value)) return null;
   return (
-    <div className={`report-info ${wide ? "wide" : ""}`}>
+    <div className={`report-info ${wide ? "wide" : ""} ${className}`.trim()}>
       <span>{label}</span>
-      <strong>{value || "-"}</strong>
+      <strong>{value}</strong>
     </div>
   );
 }
@@ -2272,6 +2860,117 @@ function DataBlock({ children }) {
 
 function Panel({ title, children }) {
   return <section className="panel"><h2>{title}</h2><div className="panel-body">{children}</div></section>;
+}
+
+function PediatricGrowthCharts({ anthropometryResult }) {
+  const chartModel = useMemo(() => buildBmiGrowthChartModel(anthropometryResult), [anthropometryResult]);
+  const isPrintMode = typeof window !== "undefined" && window.matchMedia && window.matchMedia("print").matches;
+
+  const chartOptions = useMemo(() => ({
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: "nearest", intersect: false },
+    animation: false,
+    layout: { padding: isPrintMode ? { top: 4, right: 8, bottom: 2, left: 4 } : { top: 4, right: 8, bottom: 0, left: 4 } },
+    plugins: {
+      legend: {
+        position: "bottom",
+        align: "start",
+        labels: {
+          boxWidth: isPrintMode ? 10 : 12,
+          boxHeight: 3,
+          usePointStyle: false,
+          color: "#476347",
+          padding: isPrintMode ? 8 : 10,
+          font: { size: isPrintMode ? 9 : 10 },
+          filter(item) {
+            return item.text !== "Avaliacao atual";
+          },
+        },
+      },
+      tooltip: {
+        callbacks: {
+          label(context) {
+            const xValue = Number(context.parsed.x || 0).toFixed(2);
+            const yValue = Number(context.parsed.y || 0).toFixed(2);
+            return `${context.dataset.label}: ${yValue} IMC aos ${xValue} anos`;
+          },
+        },
+      },
+    },
+    scales: {
+      x: {
+        type: "linear",
+        title: { display: true, text: "Idade (anos)", color: "#476347", font: { size: isPrintMode ? 9 : 12 } },
+        ticks: { color: "#6f8268", maxTicksLimit: isPrintMode ? 6 : 8, font: { size: isPrintMode ? 9 : 11 } },
+        grid: { color: "rgba(111,143,98,.08)" },
+      },
+      y: {
+        title: { display: true, text: "IMC", color: "#476347", font: { size: isPrintMode ? 9 : 12 } },
+        ticks: { color: "#6f8268", maxTicksLimit: isPrintMode ? 6 : 7, font: { size: isPrintMode ? 9 : 11 } },
+        grid: { color: "rgba(111,143,98,.08)" },
+      },
+    },
+  }), [isPrintMode]);
+
+  if (!anthropometryResult) return null;
+
+  if (anthropometryResult.typeClassification === "ADULTO_IMC") {
+    return (
+      <section className="growth-chart-section">
+        <div className="growth-chart-header">
+          <div>
+            <span className="bmi-eyebrow">Curvas de Crescimento</span>
+            <h3>Grafico de percentil e escore-z nao se aplica ao IMC adulto</h3>
+            <p>No adulto, o relatorio utiliza a classificacao fixa de IMC e nao a curva de IMC por idade e sexo.</p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (!chartModel) return null;
+
+  return (
+    <section className="growth-chart-section">
+      <div className="growth-chart-header">
+        <div>
+          <span className="bmi-eyebrow">Curvas de Crescimento</span>
+          <h3>{chartModel.title}</h3>
+          <p>{chartModel.subtitle}</p>
+        </div>
+        <div className="growth-chart-summary">
+          <span><strong>IMC:</strong> {anthropometryResult.bmiDisplay}</span>
+          <span><strong>Percentil:</strong> {anthropometryResult.percentileDisplay || "-"}</span>
+          <span><strong>Escore-z:</strong> {anthropometryResult.zScoreDisplay || "-"}</span>
+        </div>
+      </div>
+
+      <div className="growth-chart-grid">
+        <div className="growth-chart-card">
+          <div className="growth-chart-card-head">
+            <h4>Grafico Percentil</h4>
+            <small>Curvas OMS/SBP em percentis para IMC por idade</small>
+          </div>
+          <div className="growth-chart-point-note">Ponto azul: avaliacao atual do aluno.</div>
+          <div className="growth-chart-canvas">
+            <Line data={{ datasets: chartModel.percentileChart.datasets }} options={chartOptions} />
+          </div>
+        </div>
+
+        <div className="growth-chart-card">
+          <div className="growth-chart-card-head">
+            <h4>Grafico Escore-Z</h4>
+            <small>Curvas OMS/SBP em escore-z para IMC por idade</small>
+          </div>
+          <div className="growth-chart-point-note">Ponto azul: avaliacao atual do aluno.</div>
+          <div className="growth-chart-canvas">
+            <Line data={{ datasets: chartModel.zScoreChart.datasets }} options={chartOptions} />
+          </div>
+        </div>
+      </div>
+    </section>
+  );
 }
 
 function Table({ headers, rows, empty = "Nenhum registro encontrado." }) {
@@ -2340,6 +3039,61 @@ function MultiSelect({ label, name, options, wide, defaultValue = [] }) {
   );
 }
 
+function SchoolAssignmentsField({ label, name, schools, selectedSchoolIds, onChange }) {
+  const [pendingSchoolId, setPendingSchoolId] = useState("");
+  const selectedSchools = selectedSchoolIds.map((schoolId) => findById(schools, schoolId)).filter(Boolean);
+  const availableSchools = schools.filter((school) => !selectedSchoolIds.includes(school.id));
+
+  const addSchool = () => {
+    if (!pendingSchoolId) return;
+    if (selectedSchoolIds.includes(pendingSchoolId)) {
+      setPendingSchoolId("");
+      return;
+    }
+    onChange([...selectedSchoolIds, pendingSchoolId]);
+    setPendingSchoolId("");
+  };
+
+  const removeSchool = (schoolId) => {
+    const school = findById(schools, schoolId);
+    const confirmed = window.confirm(`Desvincular a escola "${formatSchoolLabel(school) || "Selecionada"}" deste nutricionista?`);
+    if (!confirmed) return;
+    onChange(selectedSchoolIds.filter((currentId) => String(currentId) !== String(schoolId)));
+  };
+
+  return (
+    <div className="field wide">
+      <span>{label}</span>
+      <div className="school-assignments">
+        <div className="school-assignment-add">
+          <select value={pendingSchoolId} onChange={(event) => setPendingSchoolId(event.target.value)} disabled={!availableSchools.length}>
+            <option value="">{availableSchools.length ? "Selecione uma escola para vincular" : "Todas as escolas ja estao vinculadas"}</option>
+            {availableSchools.map((school) => <option key={school.id} value={school.id}>{formatSchoolLabel(school)}</option>)}
+          </select>
+          <button className="btn primary" type="button" onClick={addSchool} disabled={!pendingSchoolId}>
+            <PlusCircle size={17} /> Vincular
+          </button>
+        </div>
+
+        <div className="school-assignment-list">
+          {selectedSchools.length ? selectedSchools.map((school) => (
+            <div key={school.id} className="school-assignment-chip">
+              <div>
+                <strong>{formatSchoolLabel(school)}</strong>
+                <small>Escola vinculada ao nutricionista</small>
+              </div>
+              <button className="mini danger" type="button" onClick={() => removeSchool(school.id)}>
+                <Trash2 size={14} /> Desvincular
+              </button>
+              <input type="hidden" name={name} value={school.id} />
+            </div>
+          )) : <div className="school-assignment-empty">Nenhuma escola vinculada. Adicione uma escola para criar o vinculo.</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Info({ label, value }) {
   return <div className="info-tile"><span>{label}</span><b>{value || "-"}</b></div>;
 }
@@ -2366,7 +3120,7 @@ function ColorChoices({ defaultValue }) {
 
 function EditorMock({ defaultValue }) {
   const tools = [Undo2, Redo2, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, AlignJustify, List, ListOrdered, Table2, LinkIcon, ImageIcon, Globe2];
-  return <div className="editor wide"><div>{tools.map((Icon, index) => <button key={index} title="Editor" type="button"><Icon size={15} /></button>)}</div><textarea name="bannerHtml" defaultValue={defaultValue || "<p>Bem-vindo ao sistema ABDESM.</p>"} /></div>;
+  return <div className="editor wide"><div>{tools.map((Icon, index) => <button key={index} title="Editor" type="button"><Icon size={15} /></button>)}</div><textarea name="bannerHtml" defaultValue={defaultValue || "<p>Bem-vindo ao NUTRATIVA.</p>"} /></div>;
 }
 
 function CookieBar({ consentState, onAccept, onRejectOptional }) {
@@ -2657,6 +3411,123 @@ function formatDate(value) {
   return day && month && year ? `${day}/${month}/${year}` : value;
 }
 
+function parseAppDate(value) {
+  if (!value) return null;
+  const parsed = new Date(`${value}T00:00:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function startOfCurrentDay() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today;
+}
+
+function isCampaignClosed(campaign, today = startOfCurrentDay()) {
+  if (!campaign) return true;
+  const status = normalizeCsvKey(campaign.status);
+  if (status === "fechada" || status === "finalizada") return true;
+  const endDate = parseAppDate(campaign.endDate);
+  return !!(endDate && endDate < today);
+}
+
+function getCampaignLifecycleStatus(campaign, today = startOfCurrentDay()) {
+  if (!campaign) return "Invalida";
+  const startDate = parseAppDate(campaign.startDate);
+  const endDate = parseAppDate(campaign.endDate);
+  if (!startDate || !endDate) return "Invalida";
+  if (isCampaignClosed(campaign, today)) return "Finalizada";
+  if (startDate > today) return "Pendente";
+  if (startDate <= today && endDate >= today) return "Ativa";
+  return "Pendente";
+}
+
+function getCampaignStatusLabel(campaign) {
+  const lifecycle = getCampaignLifecycleStatus(campaign);
+  if (lifecycle === "Ativa") return "Ativa";
+  if (lifecycle === "Pendente") return "Pendente";
+  if (lifecycle === "Finalizada") return "Finalizada";
+  return campaign?.status || "Invalida";
+}
+
+function getActiveCampaign(campaigns = [], today = startOfCurrentDay()) {
+  return campaigns.find((campaign) => getCampaignLifecycleStatus(campaign, today) === "Ativa") || null;
+}
+
+function getBlockingCampaign(campaigns = [], nextCampaign) {
+  return campaigns.find((campaign) => {
+    if (nextCampaign?.id && String(campaign.id) === String(nextCampaign.id)) return false;
+    return !isCampaignClosed(campaign);
+  }) || null;
+}
+
+function getLatestCampaign(campaigns = []) {
+  return [...campaigns]
+    .sort((left, right) => (parseAppDate(right.endDate)?.getTime() || 0) - (parseAppDate(left.endDate)?.getTime() || 0))[0] || null;
+}
+
+function findCampaignForEvaluation(campaigns = [], evaluation) {
+  if (!evaluation) return null;
+
+  const byId = evaluation.campaignId ? findById(campaigns, evaluation.campaignId) : null;
+  if (byId) return byId;
+
+  const byName = campaigns.find((campaign) => String(campaign.name || "").trim() === String(evaluation.campaignName || "").trim()) || null;
+  if (byName) return byName;
+
+  const evaluatedAt = evaluation.evaluatedAt || evaluation.updatedAt || evaluation.createdAt || "";
+  const evaluationDate = evaluatedAt ? new Date(evaluatedAt) : null;
+  if (evaluationDate && !Number.isNaN(evaluationDate.getTime())) {
+    const matchedByPeriod = campaigns.find((campaign) => {
+      const startDate = parseAppDate(campaign.startDate);
+      const endDate = parseAppDate(campaign.endDate);
+      if (!startDate || !endDate) return false;
+      const compareDate = new Date(evaluationDate);
+      compareDate.setHours(0, 0, 0, 0);
+      return compareDate >= startDate && compareDate <= endDate;
+    }) || null;
+
+    if (matchedByPeriod) return matchedByPeriod;
+  }
+
+  return campaigns.length === 1 ? campaigns[0] : null;
+}
+
+function isEvaluationInCampaign(evaluation, campaign) {
+  if (!evaluation || !campaign) return false;
+  if (evaluation.campaignId && String(evaluation.campaignId) === String(campaign.id)) return true;
+  if (evaluation.campaignName && String(evaluation.campaignName).trim() === String(campaign.name || "").trim()) return true;
+
+  const campaignStartDate = parseAppDate(campaign.startDate);
+  const campaignEndDate = parseAppDate(campaign.endDate);
+  const evaluatedAt = evaluation.evaluatedAt || evaluation.updatedAt || evaluation.createdAt || "";
+  const evaluationDate = evaluatedAt ? new Date(evaluatedAt) : null;
+
+  if (!campaignStartDate || !campaignEndDate || !evaluationDate || Number.isNaN(evaluationDate.getTime())) return false;
+  evaluationDate.setHours(0, 0, 0, 0);
+  return evaluationDate >= campaignStartDate && evaluationDate <= campaignEndDate;
+}
+
+function getEvaluationsForCampaign(evaluations = [], campaign) {
+  if (!campaign) return [];
+  return evaluations.filter((evaluation) => isEvaluationInCampaign(evaluation, campaign));
+}
+
+function indexEvaluationsByStudent(evaluations = []) {
+  return Object.fromEntries(evaluations.map((evaluation) => [evaluation.studentId, evaluation]));
+}
+
+function validateCampaignRecord(payload) {
+  const name = String(payload?.name || "").trim();
+  const startDate = parseAppDate(payload?.startDate);
+  const endDate = parseAppDate(payload?.endDate);
+  if (!name) return "Informe o nome da campanha.";
+  if (!startDate) return "Informe a data de inicio da campanha.";
+  if (!endDate) return "Informe a data de fim da campanha.";
+  if (endDate < startDate) return "A data de fim da campanha nao pode ser anterior a data de inicio.";
+  return "";
+}
+
 function formatNewsDate(value) {
   if (!value) return "";
   try {
@@ -2703,27 +3574,16 @@ function formatMonthYear(value) {
   }
 }
 
-function formatAge(value) {
-  if (!value) return "-";
-  try {
-    const birth = new Date(value);
-    const today = new Date();
-    let years = today.getFullYear() - birth.getFullYear();
-    const monthDiff = today.getMonth() - birth.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
-      years -= 1;
-    }
-    return `${Math.max(years, 0)} ano(s)`;
-  } catch {
-    return "-";
-  }
+function formatAge(value, referenceDate) {
+  return calculateAgeOnDate(value, referenceDate)?.label || "-";
 }
 
-function calculateBmi(weight, heightCm) {
-  const weightNumber = Number(String(weight || "").replace(",", "."));
-  const heightMeters = Number(String(heightCm || "").replace(",", ".")) / 100;
-  if (!Number.isFinite(weightNumber) || !Number.isFinite(heightMeters) || heightMeters <= 0) return "";
-  return (weightNumber / (heightMeters * heightMeters)).toFixed(2);
+function hasContent(value) {
+  if (value === null || value === undefined) return false;
+  if (typeof value === "number") return Number.isFinite(value);
+  const normalized = String(value).trim();
+  if (!normalized) return false;
+  return !["-", "Nao informado.", "Nao informado", "Sem observacoes adicionais.", "Nenhum medicamento informado."].includes(normalized);
 }
 
 function cloneEvaluationSections(source = evaluationSectionDefaults) {
@@ -2794,7 +3654,7 @@ function buildEatingHabitsReport(section = {}) {
   if (section.sweets) items.push("Consome muitos doces");
   if (section.lowWater) items.push("Bebe pouca agua");
   if (section.dailyFruit) items.push("Consome frutas diariamente");
-  return items.length ? items : ["Nenhum habito marcado."];
+  return items;
 }
 
 function buildAllergiesReport(section = {}) {
@@ -2804,18 +3664,19 @@ function buildAllergiesReport(section = {}) {
   if (section.eggs) items.push("Ovos");
   if (section.peanuts) items.push("Amendoim");
   if (section.dyes) items.push("Corantes artificiais");
-  return items.length ? items : ["Nenhuma alergia ou intolerancia marcada."];
+  return items;
 }
 
 function optionFor(field, data) {
   if (field === "Escola") return ["Todas as escolas", ...data.schools.map((school) => school.name)];
   if (field === "Sexo") return ["Todos", "Masculino", "Feminino"];
-  if (field === "Zona") return ["Todas as zonas", "Urbana", "Rural"];
+  if (field === "Zona") return ["Todas as zonas", ...uniqueValues((data.schools || []).map((school) => school.zone))];
   if (field === "Campanha") return ["Todas as campanhas", ...data.campaigns.map((campaign) => campaign.name)];
   if (field === "Tipo de Relatorio") return ["Simples", "Analitico"];
   if (field === "Turno") return ["Todos os turnos", "Manha", "Tarde", "Noite", "Integral"];
-  if (field === "Estado") return ["Todos os estados"];
-  if (field === "Cidade") return ["Todas as cidades"];
+  if (field === "Estado") return ["Todos os estados", ...uniqueValues((data.schools || []).map((school) => school.state))];
+  if (field === "Cidade") return ["Todas as cidades", ...uniqueValues((data.schools || []).map((school) => school.city))];
+  if (field === "Municipio") return ["Todos os municipios", ...uniqueValues((data.schools || []).map((school) => school.district))];
   return [`Todas as opcoes de ${field}`];
 }
 
@@ -2827,11 +3688,13 @@ function resolveRouteLabel(route) {
   if (route.startsWith("/anos")) return "Anos Letivos";
   if (route.startsWith("/campanhas")) return "Campanhas";
   if (route.startsWith("/nutricionistas")) return "Vinculos e Equipe";
-  if (route.startsWith("/relatorios/nutricionista")) return "Relatorio do Nutricionista";
+  if (route.startsWith("/relatorios/nutricionista")) return "Avaliacoes Nutricionais";
+  if (route.startsWith("/relatorios/individual")) return "Relatorio Nutricional Individual";
   if (route.startsWith("/relatorios")) return "Central de Relatorios";
   if (route.startsWith("/configuracoes")) return "Configuracoes";
   if (route.startsWith("/profile")) return "Meu Perfil";
-  return "Dashboard Executivo";
+  return "Central de Operacoes";
 }
 
 createRoot(document.getElementById("root")).render(<App />);
+

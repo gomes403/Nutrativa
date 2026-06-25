@@ -143,6 +143,57 @@ function getTokenFromRequest(req) {
   return header.startsWith("Bearer ") ? header.slice(7).trim() : "";
 }
 
+function startOfToday() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today;
+}
+
+function parseDateOnly(value) {
+  if (!value) return null;
+  const parsed = new Date(`${value}T00:00:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function isCampaignFinished(campaign, today = startOfToday()) {
+  if (!campaign) return true;
+  const status = String(campaign.status || "").trim().toLowerCase();
+  if (status === "fechada" || status === "finalizada") return true;
+  const endDate = parseDateOnly(campaign.endDate);
+  return !!(endDate && endDate < today);
+}
+
+function isCampaignActive(campaign, today = startOfToday()) {
+  if (!campaign || isCampaignFinished(campaign, today)) return false;
+  const startDate = parseDateOnly(campaign.startDate);
+  const endDate = parseDateOnly(campaign.endDate);
+  if (!startDate || !endDate) return false;
+  return startDate <= today && endDate >= today;
+}
+
+function findActiveCampaign(campaigns = [], today = startOfToday()) {
+  return campaigns.find((campaign) => isCampaignActive(campaign, today)) || null;
+}
+
+function validateCampaignPayload(payload) {
+  const name = String(payload?.name || "").trim();
+  const startDate = parseDateOnly(payload?.startDate);
+  const endDate = parseDateOnly(payload?.endDate);
+
+  if (!name) return "Informe o nome da campanha.";
+  if (!startDate) return "Informe a data de inicio da campanha.";
+  if (!endDate) return "Informe a data de fim da campanha.";
+  if (endDate < startDate) return "A data de fim da campanha nao pode ser anterior a data de inicio.";
+  return "";
+}
+
+function findBlockingCampaign(campaigns = [], nextCampaign, today = startOfToday()) {
+  return campaigns.find((campaign) => {
+    if (String(campaign.id) === String(nextCampaign.id)) return false;
+    return !isCampaignFinished(campaign, today);
+  }) || null;
+}
+
 function requireAuth(req, res, next) {
   const token = getTokenFromRequest(req);
   const session = token ? authSessions.get(token) : null;
@@ -180,6 +231,31 @@ function collectionRoute(name) {
       ...(name === "schools" ? { schoolCode: nextSchoolCode(rows) } : {}),
     };
 
+    if (name === "campaigns") {
+      const validationError = validateCampaignPayload(item);
+      if (validationError) return res.status(400).json({ error: validationError });
+      const blockingCampaign = findBlockingCampaign(rows, item);
+      if (blockingCampaign) {
+        return res.status(400).json({
+          error: `A campanha "${blockingCampaign.name}" ainda nao foi finalizada. Feche ou conclua a campanha atual antes de criar uma nova.`,
+        });
+      }
+    }
+
+    if (name === "evaluations") {
+      const campaigns = await dataStore.getCollection("campaigns");
+      const activeCampaign = findActiveCampaign(campaigns);
+      if (!activeCampaign) {
+        return res.status(400).json({
+          error: "Nenhuma campanha ativa foi encontrada. O administrador precisa cadastrar uma campanha com data de inicio e fim para liberar as avaliacoes.",
+        });
+      }
+      item.campaignId = activeCampaign.id;
+      item.campaignName = activeCampaign.name;
+      item.campaignStartDate = activeCampaign.startDate;
+      item.campaignEndDate = activeCampaign.endDate;
+    }
+
     await dataStore.createCollectionItem(name, item);
     res.status(201).json(sanitizeCollectionPayload(name, item));
   });
@@ -189,6 +265,33 @@ function collectionRoute(name) {
     if (!currentItem) return res.status(404).json({ error: "Registro nao encontrado." });
 
     const item = { ...currentItem, ...req.body, id: currentItem.id };
+
+    if (name === "campaigns") {
+      const rows = await dataStore.getCollection(name);
+      const validationError = validateCampaignPayload(item);
+      if (validationError) return res.status(400).json({ error: validationError });
+      const blockingCampaign = isCampaignFinished(item) ? null : findBlockingCampaign(rows, item);
+      if (blockingCampaign) {
+        return res.status(400).json({
+          error: `A campanha "${blockingCampaign.name}" ainda nao foi finalizada. Feche ou conclua a campanha atual antes de manter outra campanha aberta.`,
+        });
+      }
+    }
+
+    if (name === "evaluations") {
+      const campaigns = await dataStore.getCollection("campaigns");
+      const activeCampaign = findActiveCampaign(campaigns);
+      if (!activeCampaign) {
+        return res.status(400).json({
+          error: "Nenhuma campanha ativa foi encontrada. O administrador precisa cadastrar uma campanha com data de inicio e fim para liberar as avaliacoes.",
+        });
+      }
+      item.campaignId = activeCampaign.id;
+      item.campaignName = activeCampaign.name;
+      item.campaignStartDate = activeCampaign.startDate;
+      item.campaignEndDate = activeCampaign.endDate;
+    }
+
     await dataStore.updateCollectionItem(name, req.params.id, item);
     res.json(sanitizeCollectionPayload(name, item));
   });
@@ -204,7 +307,7 @@ app.get("/api/health", async (_req, res) => {
   const schemaVersion = await dataStore.getMeta("schemaVersion");
   res.json({
     ok: true,
-    service: "abdesm-local-api",
+    service: "nutrativa-local-api",
     database: {
       client: dataStore.config.client === "sqlite" ? "sqlite" : "mysql2",
       schemaVersion: schemaVersion || "1",
@@ -344,7 +447,7 @@ app.put("/api/users/:id/password", async (req, res) => {
 async function start() {
   await dataStore.init();
   app.listen(port, () => {
-    console.log(`ABDESM local API running at http://127.0.0.1:${port}`);
+    console.log(`NUTRATIVA local API running at http://127.0.0.1:${port}`);
     console.log(`Database client: ${dataStore.config.client === "sqlite" ? "sqlite" : "mysql2"}`);
   });
 }
