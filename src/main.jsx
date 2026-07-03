@@ -44,13 +44,14 @@ import {
   UserCog,
   Users,
 } from "lucide-react";
-import { Bar, Line } from "react-chartjs-2";
+import { Bar, Line, Pie } from "react-chartjs-2";
 import { CircleMarker, MapContainer, Popup, TileLayer } from "react-leaflet";
 import {
   BarElement,
   BarController,
   CategoryScale,
   Chart as ChartJS,
+  ArcElement,
   LinearScale,
   Legend,
   LineController,
@@ -68,7 +69,7 @@ import {
 } from "./anthropometry";
 import "./styles.css";
 
-ChartJS.register(CategoryScale, LinearScale, BarController, BarElement, LineController, LineElement, PointElement, Tooltip, Legend);
+ChartJS.register(CategoryScale, LinearScale, BarController, BarElement, LineController, LineElement, PointElement, ArcElement, Tooltip, Legend);
 
 const apiBase = "";
 const authStorageKey = "abdesm-auth-token";
@@ -103,6 +104,13 @@ const emptyData = {
     language: "pt-BR",
     maintenanceMode: false,
     sidebarColor: "Verde grafite",
+    logo: "",
+    companyName: "",
+    tradeName: "",
+    document: "",
+    phone: "",
+    email: "",
+    address: "",
   },
 };
 
@@ -669,7 +677,11 @@ function App() {
   );
 }
 
-function BrandMark({ small = false }) {
+function BrandMark({ small = false, src = "" }) {
+  if (src) {
+    return <img className={`brand-logo ${small ? "brand-logo-small" : ""}`} src={src} alt="Logo do sistema" />;
+  }
+
   return (
     <div className={`brand-mark ${small ? "brand-mark-small" : ""}`}>
       <span />
@@ -745,14 +757,14 @@ function Shell({ route, go, onLogout, children }) {
   const { data, currentUser } = useAppData();
   const pageLabel = resolveRouteLabel(route);
   const menuItems = getMenuForUser(currentUser);
+  const brandName = data.settings.tradeName || data.settings.systemName || "NUTRATIVA";
   return (
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand" onClick={() => go("/dashboard")}>
-          <BrandMark small />
+          <BrandMark small src={data.settings.logo} />
           <div>
-            <strong>{data.settings.systemName || "NUTRATIVA"}</strong>
-            <span>Edicao {data.settings.version || "2026.06 Local"}</span>
+            <strong>{brandName}</strong>
           </div>
         </div>
         <nav>
@@ -899,13 +911,23 @@ function editId(route) {
   return parts.length >= 4 ? parts[2] : undefined;
 }
 
-function PageCard({ title, crumb, children, icon }) {
+function PageCard({ title, crumb, children, icon, className = "" }) {
+  const isReportPage = className.split(" ").includes("report-page");
   return (
-    <section className="page-card">
+    <section className={`page-card ${className}`.trim()}>
       <div className="page-head">
-        <h1>{icon}{title}</h1>
+        <div className="page-title-wrap">
+          {isReportPage && <ReportHeaderLogo />}
+          <h1>{icon}{title}</h1>
+        </div>
         <div className="crumb">Dashboard {crumb ? `/ ${crumb}` : ""}</div>
       </div>
+      {isReportPage && (
+        <div className="report-print-header">
+          <ReportHeaderLogo />
+          <h2>{title}</h2>
+        </div>
+      )}
       {children}
     </section>
   );
@@ -1405,7 +1427,7 @@ function NutritionistReportsPage({ go }) {
   const context = useMemo(() => getNutritionistContext(data, currentUser), [data, currentUser]);
 
   return (
-    <PageCard title="Relatorio do Nutricionista" crumb="Nutricionista / Relatorio">
+    <PageCard title="Relatorio do Nutricionista" crumb="Nutricionista / Relatorio" className="report-page">
       <div className="alert success">Os relatorios abaixo exibem somente avaliacoes realizadas por voce e incluem a identificacao profissional com CRN no fechamento.</div>
       <DataBlock>
         <Table
@@ -1424,6 +1446,7 @@ function NutritionistReportsPage({ go }) {
           empty="Nenhuma avaliacao sua foi registrada ainda."
         />
       </DataBlock>
+      <ReportCompanyFooter />
     </PageCard>
   );
 }
@@ -1453,7 +1476,7 @@ function NutritionistReportDetail({ evaluationId, go, scope = "nutritionist" }) 
   const backRoute = scope === "admin" ? "/relatorios/individual" : "/avaliacoes";
 
   if (!evaluation) {
-    return <PageCard title={pageTitle} crumb={crumb}><EmptyState text="Relatorio nao encontrado ou sem permissao de acesso." /></PageCard>;
+    return <PageCard title={pageTitle} crumb={crumb} className="report-page"><EmptyState text="Relatorio nao encontrado ou sem permissao de acesso." /></PageCard>;
   }
 
   const detailItems = [
@@ -1510,16 +1533,19 @@ function NutritionistReportDetail({ evaluationId, go, scope = "nutritionist" }) 
   const campaignPeriod = campaignStartDate && campaignEndDate ? `${formatDate(campaignStartDate)} ate ${formatDate(campaignEndDate)}` : "";
 
   return (
-    <PageCard title="Relatorio da Avaliacao Nutricional" crumb={crumb}>
+    <PageCard title="Relatorio da Avaliacao Nutricional" crumb={crumb} className="report-page">
       <div className="evaluation-actions">
         <button className="btn outline muted-btn" type="button" onClick={() => go(backRoute)}>Voltar</button>
         <button className="btn outline success-text" type="button" onClick={() => window.print()}>Imprimir</button>
       </div>
       <div className="report-sheet">
         <div className="report-header">
-          <div>
-            <h2>Avaliacao Nutricional do Aluno</h2>
-            <p>{evaluation.studentName || student?.name}</p>
+          <div className="report-header-title">
+            <ReportHeaderLogo />
+            <div>
+              <h2>Avaliacao Nutricional do Aluno</h2>
+              <p>{evaluation.studentName || student?.name}</p>
+            </div>
           </div>
           <div className="report-meta">
             <span>Data da avaliacao: {formatDateTime(evaluation.evaluatedAt || evaluation.updatedAt || evaluation.createdAt)}</span>
@@ -1655,6 +1681,7 @@ function NutritionistReportDetail({ evaluationId, go, scope = "nutritionist" }) 
           <span>CRN: {evaluation.crn || "Nao informado"}</span>
           <small>Assinatura do nutricionista responsavel pela avaliacao realizada</small>
         </div>
+        <ReportCompanyFooter />
       </div>
     </PageCard>
   );
@@ -2433,31 +2460,52 @@ function ReportSchools() {
     zone: "",
   });
 
-  const schoolsWithEvaluations = useMemo(() => {
-    const indexedSchools = Object.fromEntries((data.schools || []).map((school) => [school.id, school]));
-    const grouped = new Map();
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    const resizeCharts = () => {
+      window.requestAnimationFrame(() => {
+        Object.values(ChartJS.instances || {}).forEach((chart) => chart?.resize?.());
+      });
+    };
+
+    window.addEventListener("beforeprint", resizeCharts);
+    window.addEventListener("afterprint", resizeCharts);
+    return () => {
+      window.removeEventListener("beforeprint", resizeCharts);
+      window.removeEventListener("afterprint", resizeCharts);
+    };
+  }, []);
+
+  const schoolReportRows = useMemo(() => {
+    const grouped = new Map((data.schools || []).map((school) => [school.id, {
+      schoolId: school.id,
+      schoolName: school.name || "-",
+      state: school.state || "",
+      city: school.city || "",
+      municipality: school.district || "",
+      zone: school.zone || "",
+      studentCount: 0,
+      evaluatedStudentIds: new Set(),
+      evaluationCount: 0,
+      bmiValues: [],
+      latestCampaign: "",
+      latestEvaluationDate: "",
+    }]));
+
+    for (const student of data.students || []) {
+      const current = grouped.get(student.schoolId);
+      if (current) current.studentCount += 1;
+    }
 
     for (const evaluation of data.evaluations || []) {
-      const school = indexedSchools[evaluation.schoolId];
-      if (!school) continue;
+      const current = grouped.get(evaluation.schoolId);
+      if (!current) continue;
 
-      if (!grouped.has(school.id)) {
-        grouped.set(school.id, {
-          schoolId: school.id,
-          schoolName: evaluation.schoolName || school.name || "-",
-          state: school.state || "",
-          city: school.city || "",
-          municipality: school.district || "",
-          zone: school.zone || "",
-          evaluationCount: 0,
-          bmiValues: [],
-          latestCampaign: "",
-          latestEvaluationDate: "",
-        });
-      }
-
-      const current = grouped.get(school.id);
       current.evaluationCount += 1;
+      if (evaluation.studentId || evaluation.id) {
+        current.evaluatedStudentIds.add(String(evaluation.studentId || evaluation.id));
+      }
 
       const bmiValue = Number(String(evaluation?.anthropometry?.bmi || "").replace(",", "."));
       if (Number.isFinite(bmiValue) && bmiValue > 0) {
@@ -2474,17 +2522,19 @@ function ReportSchools() {
     return Array.from(grouped.values())
       .map((item) => ({
         ...item,
+        evaluatedStudentCount: item.evaluatedStudentIds.size,
+        coverageRate: item.studentCount ? item.evaluatedStudentIds.size / item.studentCount : 0,
         averageBmi: item.bmiValues.length ? (item.bmiValues.reduce((sum, value) => sum + value, 0) / item.bmiValues.length) : null,
       }))
       .sort((left, right) => left.schoolName.localeCompare(right.schoolName, "pt-BR"));
-  }, [data.evaluations, data.schools]);
+  }, [data.evaluations, data.schools, data.students]);
 
-  const availableStates = useMemo(() => uniqueValues(schoolsWithEvaluations.map((item) => item.state)), [schoolsWithEvaluations]);
+  const availableStates = useMemo(() => uniqueValues(schoolReportRows.map((item) => item.state)), [schoolReportRows]);
   const stateFilteredRows = useMemo(() => (
     filters.state
-      ? schoolsWithEvaluations.filter((item) => item.state === filters.state)
-      : schoolsWithEvaluations
-  ), [filters.state, schoolsWithEvaluations]);
+      ? schoolReportRows.filter((item) => item.state === filters.state)
+      : schoolReportRows
+  ), [filters.state, schoolReportRows]);
   const availableCities = useMemo(() => uniqueValues(stateFilteredRows.map((item) => item.city)), [stateFilteredRows]);
   const cityFilteredRows = useMemo(() => (
     filters.city
@@ -2503,6 +2553,80 @@ function ReportSchools() {
     !filters.zone || item.zone === filters.zone
   )), [filters.zone, municipalityFilteredRows]);
 
+  const summary = useMemo(() => filteredRows.reduce((acc, item) => ({
+    schools: acc.schools + 1,
+    students: acc.students + item.studentCount,
+    evaluatedStudents: acc.evaluatedStudents + item.evaluatedStudentCount,
+    evaluations: acc.evaluations + item.evaluationCount,
+  }), { schools: 0, students: 0, evaluatedStudents: 0, evaluations: 0 }), [filteredRows]);
+
+  const coveragePercent = summary.students ? Math.round((summary.evaluatedStudents / summary.students) * 100) : 0;
+  const pendingStudents = Math.max(summary.students - summary.evaluatedStudents, 0);
+  const chartRows = useMemo(() => filteredRows.filter((item) => item.studentCount || item.evaluatedStudentCount || item.evaluationCount), [filteredRows]);
+  const bmiChartRows = useMemo(() => filteredRows.filter((item) => Number.isFinite(item.averageBmi)), [filteredRows]);
+  const maxStudentCount = useMemo(() => Math.max(1, ...chartRows.map((item) => item.studentCount), ...chartRows.map((item) => item.evaluatedStudentCount)), [chartRows]);
+  const maxAverageBmi = useMemo(() => Math.max(1, ...bmiChartRows.map((item) => item.averageBmi || 0)), [bmiChartRows]);
+
+  const coverageChartData = useMemo(() => ({
+    labels: ["Avaliados", "Nao avaliados"],
+    datasets: [{
+      data: [summary.evaluatedStudents, pendingStudents],
+      backgroundColor: ["#72b763", "#f1c86a"],
+      borderColor: ["#4f9448", "#d9a93e"],
+      borderWidth: 1,
+    }],
+  }), [pendingStudents, summary.evaluatedStudents]);
+
+  const studentChartData = useMemo(() => ({
+    labels: chartRows.map((item) => item.schoolName),
+    datasets: [
+      { label: "Alunos cadastrados", data: chartRows.map((item) => item.studentCount), backgroundColor: "#72b763", borderColor: "#4f9448", borderWidth: 1, borderRadius: 8 },
+      { label: "Alunos avaliados", data: chartRows.map((item) => item.evaluatedStudentCount), backgroundColor: "#f0b95d", borderColor: "#d49335", borderWidth: 1, borderRadius: 8 },
+    ],
+  }), [chartRows]);
+
+  const bmiChartData = useMemo(() => ({
+    labels: bmiChartRows.map((item) => item.schoolName),
+    datasets: [{ label: "IMC medio", data: bmiChartRows.map((item) => Number(item.averageBmi.toFixed(2))), backgroundColor: "#68a99d", borderColor: "#4c8f84", borderWidth: 1, borderRadius: 8 }],
+  }), [bmiChartRows]);
+
+  const coverageChartOptions = useMemo(() => ({
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { position: "bottom", labels: { color: "#476347", boxWidth: 12, boxHeight: 12 } },
+      tooltip: { callbacks: { label: (context) => `${context.label}: ${context.parsed} aluno(s)` } },
+    },
+  }), []);
+
+  const schoolChartOptions = useMemo(() => ({
+    indexAxis: "y",
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { position: "bottom", labels: { color: "#476347", boxWidth: 12, boxHeight: 12 } },
+      tooltip: { callbacks: { label: (context) => `${context.dataset.label}: ${context.parsed.x}` } },
+    },
+    scales: {
+      x: { beginAtZero: true, ticks: { precision: 0, color: "#6f8268" }, grid: { color: "rgba(111,143,98,.12)" } },
+      y: { ticks: { color: "#4d654b", font: { size: 11 } }, grid: { display: false } },
+    },
+  }), []);
+
+  const bmiChartOptions = useMemo(() => ({
+    indexAxis: "y",
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: { label: (context) => `IMC medio: ${Number(context.parsed.x || 0).toFixed(2)}` } },
+    },
+    scales: {
+      x: { beginAtZero: true, ticks: { color: "#6f8268" }, grid: { color: "rgba(111,143,98,.12)" } },
+      y: { ticks: { color: "#4d654b", font: { size: 11 } }, grid: { display: false } },
+    },
+  }), []);
+
   const updateFilter = (field, value) => {
     setFilters((current) => {
       if (field === "state") return { state: value, city: "", municipality: "", zone: "" };
@@ -2517,7 +2641,7 @@ function ReportSchools() {
   };
 
   return (
-    <PageCard title="Relatorio por Escola (IMC)" crumb="Relatorios" icon={<ClipboardList className="title-icon" />}>
+    <PageCard title="Relatorio por Escola (IMC)" crumb="Relatorios" icon={<ClipboardList className="title-icon" />} className="report-page">
       <div className="report-filter">
         <SelectField label="Estado" value={filters.state} onChange={(event) => updateFilter("state", event.target.value)} options={[["", "Todos os estados"], ...availableStates.map((value) => [value, value])]} />
         <SelectField label="Cidade" value={filters.city} onChange={(event) => updateFilter("city", event.target.value)} options={[["", "Todas as cidades"], ...availableCities.map((value) => [value, value])]} />
@@ -2530,27 +2654,125 @@ function ReportSchools() {
         </div>
       </div>
 
+      <div className="school-report-summary">
+        <div className="report-metric">
+          <span>Escolas no filtro</span>
+          <strong>{summary.schools}</strong>
+        </div>
+        <div className="report-metric">
+          <span>Alunos cadastrados</span>
+          <strong>{summary.students}</strong>
+        </div>
+        <div className="report-metric">
+          <span>Alunos avaliados</span>
+          <strong>{summary.evaluatedStudents}</strong>
+        </div>
+        <div className="report-metric">
+          <span>Cobertura</span>
+          <strong>{coveragePercent}%</strong>
+        </div>
+      </div>
+
+      <div className="school-report-charts">
+        <Panel title="Cobertura das Avaliacoes">
+          {summary.students ? (
+            <div className="chart-box school-report-chart pie-chart">
+              <Pie data={coverageChartData} options={coverageChartOptions} />
+            </div>
+          ) : <EmptyState text="Nenhum aluno encontrado para os filtros selecionados." />}
+        </Panel>
+        <Panel title="Cadastrados x Avaliados por Escola">
+          {chartRows.length ? <div className="chart-box school-report-chart"><Bar data={studentChartData} options={schoolChartOptions} /></div> : <EmptyState text="Nenhum aluno encontrado para os filtros selecionados." />}
+        </Panel>
+        <Panel title="IMC Medio por Escola">
+          {bmiChartRows.length ? <div className="chart-box school-report-chart compact-chart"><Bar data={bmiChartData} options={bmiChartOptions} /></div> : <EmptyState text="Nenhum IMC encontrado para os filtros selecionados." />}
+        </Panel>
+      </div>
+
+      <section className="school-report-print-charts">
+        <div className="print-chart-card coverage-card">
+          <h2>Cobertura das Avaliacoes</h2>
+          <div className="print-coverage-layout">
+            <div className="print-pie" style={{ "--coverage-deg": `${coveragePercent * 3.6}deg` }} aria-hidden="true" />
+            <div className="print-chart-legend">
+              <span><i className="legend-green" /> Avaliados: {summary.evaluatedStudents}</span>
+              <span><i className="legend-yellow" /> Nao avaliados: {pendingStudents}</span>
+              <strong>{coveragePercent}% de cobertura</strong>
+            </div>
+          </div>
+        </div>
+
+        <div className="print-chart-card">
+          <h2>Cadastrados x Avaliados por Escola</h2>
+          <div className="print-bar-list">
+            {chartRows.map((item) => (
+              <div className="print-bar-row" key={`students-${item.schoolId}`}>
+                <span className="print-bar-label">{item.schoolName}</span>
+                <div className="print-bar-stack">
+                  <div className="print-track">
+                    <div className="print-bar registered" style={{ width: `${Math.max((item.studentCount / maxStudentCount) * 100, item.studentCount ? 2 : 0)}%` }} />
+                  </div>
+                  <div className="print-track">
+                    <div className="print-bar evaluated" style={{ width: `${Math.max((item.evaluatedStudentCount / maxStudentCount) * 100, item.evaluatedStudentCount ? 2 : 0)}%` }} />
+                  </div>
+                </div>
+                <span className="print-bar-values">{item.studentCount} / {item.evaluatedStudentCount}</span>
+              </div>
+            ))}
+          </div>
+          <div className="print-chart-legend horizontal">
+            <span><i className="legend-green" /> Cadastrados</span>
+            <span><i className="legend-yellow" /> Avaliados</span>
+          </div>
+        </div>
+
+        <div className="print-chart-card">
+          <h2>IMC Medio por Escola</h2>
+          <div className="print-bar-list">
+            {bmiChartRows.map((item) => (
+              <div className="print-bar-row" key={`bmi-${item.schoolId}`}>
+                <span className="print-bar-label">{item.schoolName}</span>
+                <div className="print-track">
+                  <div className="print-bar bmi" style={{ width: `${Math.max(((item.averageBmi || 0) / maxAverageBmi) * 100, 2)}%` }} />
+                </div>
+                <span className="print-bar-values">{item.averageBmi.toFixed(2)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {filteredRows.length ? (
-        <DataBlock>
-          <Table
-            headers={["Escola", "Estado", "Cidade", "Municipio", "Zona", "Avaliacoes", "IMC Medio", "Ultima Campanha", "Ultima Avaliacao"]}
-            rows={filteredRows.map((item) => [
-              item.schoolName,
-              item.state || "-",
-              item.city || "-",
-              item.municipality || "-",
-              item.zone || "-",
-              item.evaluationCount,
-              Number.isFinite(item.averageBmi) ? item.averageBmi.toFixed(2) : "-",
-              item.latestCampaign || "-",
-              formatDateTime(item.latestEvaluationDate) || "-",
-            ])}
-            empty="Nenhuma avaliacao encontrada para os filtros selecionados."
-          />
-        </DataBlock>
+        <>
+          <section className="school-report-print-schools">
+            <h2>Escolas</h2>
+            <ul>
+              {filteredRows.map((item) => <li key={item.schoolId}>{item.schoolName}</li>)}
+            </ul>
+          </section>
+          <div className="school-report-table">
+            <DataBlock>
+              <Table
+                headers={["Escola", "Cadastrados", "Avaliados", "Cobertura", "Avaliacoes", "IMC Medio", "Ultima Campanha", "Ultima Avaliacao"]}
+                rows={filteredRows.map((item) => [
+                  item.schoolName,
+                  item.studentCount,
+                  item.evaluatedStudentCount,
+                  `${Math.round(item.coverageRate * 100)}%`,
+                  item.evaluationCount,
+                  Number.isFinite(item.averageBmi) ? item.averageBmi.toFixed(2) : "-",
+                  item.latestCampaign || "-",
+                  formatDateTime(item.latestEvaluationDate) || "-",
+                ])}
+                empty="Nenhuma escola encontrada para os filtros selecionados."
+              />
+            </DataBlock>
+          </div>
+        </>
       ) : (
-        <div className="alert warning-light">Nenhuma avaliacao encontrada para os filtros selecionados.</div>
+        <div className="alert warning-light">Nenhuma escola encontrada para os filtros selecionados.</div>
       )}
+      <ReportCompanyFooter />
     </PageCard>
   );
 }
@@ -2632,7 +2854,7 @@ function ReportIndividual({ go }) {
   };
 
   return (
-    <PageCard title="Relatorio Nutricional Individual" crumb="Admin / Relatorios" icon={<ClipboardList className="title-icon" />}>
+    <PageCard title="Relatorio Nutricional Individual" crumb="Admin / Relatorios" icon={<ClipboardList className="title-icon" />} className="report-page">
       <div className="report-filter">
         <SelectField label="Escola" value={filters.school} onChange={(event) => updateFilter("school", event.target.value)} options={schoolOptions} />
         <SelectField label="Campanha" value={filters.campaign} onChange={(event) => updateFilter("campaign", event.target.value)} options={campaignOptions} />
@@ -2671,6 +2893,7 @@ function ReportIndividual({ go }) {
           empty="Nenhuma avaliacao encontrada com os criterios selecionados."
         />
       </DataBlock>
+      <ReportCompanyFooter />
     </PageCard>
   );
 }
@@ -2682,12 +2905,13 @@ function ReportCampaign() {
 function ReportFrame({ title, fields, actions, empty }) {
   const { data } = useAppData();
   return (
-    <PageCard title={title} crumb="Relatorios" icon={<ClipboardList className="title-icon" />}>
+    <PageCard title={title} crumb="Relatorios" icon={<ClipboardList className="title-icon" />} className="report-page">
       <div className="report-filter">
         {fields.map((field) => field.includes("Data") ? <Field key={field} label={field} type="date" /> : <SelectField key={field} label={field} options={optionFor(field, data)} />)}
         <div className="button-row">{actions.map((label, index) => <button key={label} className={`btn ${index === 0 ? "outline primary-text" : label.includes("PDF") ? "outline danger-text" : "outline success-text"}`}>{label === "Filtrar" && <Search size={16} />}{label}</button>)}</div>
       </div>
       <div className="alert warning-light">{empty}</div>
+      <ReportCompanyFooter />
     </PageCard>
   );
 }
@@ -2697,7 +2921,7 @@ function SettingsPage() {
   const settings = data.settings;
   const submit = async (event) => {
     event.preventDefault();
-    await saveSettings(readForm(event.currentTarget));
+    await saveSettings(await readSettingsForm(event.currentTarget, settings));
   };
   return (
     <PageCard title="Preferencias da Plataforma" crumb="Configuracoes">
@@ -2712,6 +2936,7 @@ function SettingsPage() {
         </FormSection>
         <FormSection title="Informacoes da Organizacao">
           <Field name="companyName" label="Nome da Empresa" defaultValue={settings.companyName} />
+          <Field name="tradeName" label="Nome Fantasia" defaultValue={settings.tradeName} />
           <Field name="document" label="CNPJ/CPF" defaultValue={settings.document} />
           <Field name="email" label="E-mail" type="email" defaultValue={settings.email} />
           <Field name="phone" label="Telefone/WhatsApp" defaultValue={settings.phone} />
@@ -2812,6 +3037,38 @@ function ReportInfo({ label, value, wide, className = "" }) {
     <div className={`report-info ${wide ? "wide" : ""} ${className}`.trim()}>
       <span>{label}</span>
       <strong>{value}</strong>
+    </div>
+  );
+}
+
+function ReportHeaderLogo() {
+  const { data } = useAppData();
+  const logo = data.settings?.logo;
+  if (!logo) return null;
+  return <img className="report-header-logo" src={logo} alt="Logo do sistema" />;
+}
+
+function ReportCompanyFooter() {
+  const { data } = useAppData();
+  const settings = data.settings || {};
+  const companyName = hasContent(settings.companyName) ? settings.companyName : "";
+  const items = [
+    ["CNPJ/CPF", settings.document],
+    ["Telefone/WhatsApp", settings.phone],
+    ["E-mail", settings.email],
+    ["Endereco", settings.address],
+  ].filter(([, value]) => hasContent(value));
+
+  if (!companyName && !items.length) return null;
+
+  return (
+    <div className="report-company-footer" aria-label="Informacoes da empresa">
+      {companyName && <strong>{companyName}</strong>}
+      {!!items.length && (
+        <div>
+          {items.map(([label, value]) => <span key={label}>{label}: {value}</span>)}
+        </div>
+      )}
     </div>
   );
 }
@@ -3373,6 +3630,36 @@ function readForm(form) {
     }
   }
   return values;
+}
+
+async function readSettingsForm(form, currentSettings = {}) {
+  const values = readForm(form);
+  const formData = new FormData(form);
+  const imageFields = ["logo", "favicon", "loginBackground"];
+
+  for (const field of imageFields) {
+    const file = formData.get(field);
+    if (!(file instanceof File) || !file.size) continue;
+    if (!String(file.type || "").startsWith("image/")) continue;
+    values[field] = await fileToDataUrl(file);
+  }
+
+  for (const field of imageFields) {
+    if (!Object.prototype.hasOwnProperty.call(values, field) && currentSettings[field]) {
+      values[field] = currentSettings[field];
+    }
+  }
+
+  return values;
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
 }
 
 function findById(rows, id) {

@@ -4,6 +4,13 @@ const defaultSettings = {
   timezone: "America/Sao_Paulo",
   language: "pt-BR",
   maintenanceMode: false,
+  logo: "",
+  companyName: "",
+  tradeName: "",
+  document: "",
+  phone: "",
+  email: "",
+  address: "",
 };
 
 const arrayCollections = [

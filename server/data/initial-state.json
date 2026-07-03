@@ -11,6 +11,13 @@
     "version": "2026.06 Local",
     "timezone": "America/Sao_Paulo",
     "language": "pt-BR",
-    "maintenanceMode": false
+    "maintenanceMode": false,
+    "logo": "",
+    "companyName": "",
+    "tradeName": "",
+    "document": "",
+    "phone": "",
+    "email": "",
+    "address": ""
   }
 }
