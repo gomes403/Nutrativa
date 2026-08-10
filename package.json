@@ -4,6 +4,7 @@
   "description": "Copia navegavel local do sistema ABDESM para evolucao futura.",
   "main": "index.js",
   "scripts": {
+    "start": "npm run dev",
     "dev": "concurrently \"npm:api\" \"npm:web\"",
     "web": "vite",
     "api": "node server/index.js",

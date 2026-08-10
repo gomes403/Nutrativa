@@ -2439,7 +2439,7 @@ function NutritionistForm({ id, go }) {
 
 function Reports({ go }) {
   const cards = [
-    ["Por Escolas (Estado, Cidade, Municipio)", Building2, "/relatorios/escolas"],
+    ["Por Escolas (Estado, Cidade, Zona)", Building2, "/relatorios/escolas"],
     ["Avaliacoes (Com filtros avancados)", ClipboardList, "/relatorios/avaliacoes"],
     ["Individual (Dados completos)", GraduationCap, "/relatorios/individual"],
     ["Campanha (Graficos e estatisticas)", FileBarChart, "/relatorios/campanha"],
@@ -2456,7 +2456,6 @@ function ReportSchools() {
   const [filters, setFilters] = useState({
     state: "",
     city: "",
-    municipality: "",
     zone: "",
   });
 
@@ -2483,7 +2482,6 @@ function ReportSchools() {
       schoolName: school.name || "-",
       state: school.state || "",
       city: school.city || "",
-      municipality: school.district || "",
       zone: school.zone || "",
       studentCount: 0,
       evaluatedStudentIds: new Set(),
@@ -2541,17 +2539,11 @@ function ReportSchools() {
       ? stateFilteredRows.filter((item) => item.city === filters.city)
       : stateFilteredRows
   ), [filters.city, stateFilteredRows]);
-  const availableMunicipalities = useMemo(() => uniqueValues(cityFilteredRows.map((item) => item.municipality)), [cityFilteredRows]);
-  const municipalityFilteredRows = useMemo(() => (
-    filters.municipality
-      ? cityFilteredRows.filter((item) => item.municipality === filters.municipality)
-      : cityFilteredRows
-  ), [cityFilteredRows, filters.municipality]);
-  const availableZones = useMemo(() => uniqueValues(municipalityFilteredRows.map((item) => item.zone)), [municipalityFilteredRows]);
+  const availableZones = useMemo(() => uniqueValues(cityFilteredRows.map((item) => item.zone)), [cityFilteredRows]);
 
-  const filteredRows = useMemo(() => municipalityFilteredRows.filter((item) => (
+  const filteredRows = useMemo(() => cityFilteredRows.filter((item) => (
     !filters.zone || item.zone === filters.zone
-  )), [filters.zone, municipalityFilteredRows]);
+  )), [cityFilteredRows, filters.zone]);
 
   const summary = useMemo(() => filteredRows.reduce((acc, item) => ({
     schools: acc.schools + 1,
@@ -2629,15 +2621,14 @@ function ReportSchools() {
 
   const updateFilter = (field, value) => {
     setFilters((current) => {
-      if (field === "state") return { state: value, city: "", municipality: "", zone: "" };
-      if (field === "city") return { ...current, city: value, municipality: "", zone: "" };
-      if (field === "municipality") return { ...current, municipality: value, zone: "" };
+      if (field === "state") return { state: value, city: "", zone: "" };
+      if (field === "city") return { ...current, city: value, zone: "" };
       return { ...current, [field]: value };
     });
   };
 
   const resetFilters = () => {
-    setFilters({ state: "", city: "", municipality: "", zone: "" });
+    setFilters({ state: "", city: "", zone: "" });
   };
 
   return (
@@ -2645,7 +2636,6 @@ function ReportSchools() {
       <div className="report-filter">
         <SelectField label="Estado" value={filters.state} onChange={(event) => updateFilter("state", event.target.value)} options={[["", "Todos os estados"], ...availableStates.map((value) => [value, value])]} />
         <SelectField label="Cidade" value={filters.city} onChange={(event) => updateFilter("city", event.target.value)} options={[["", "Todas as cidades"], ...availableCities.map((value) => [value, value])]} />
-        <SelectField label="Municipio" value={filters.municipality} onChange={(event) => updateFilter("municipality", event.target.value)} options={[["", "Todos os municipios"], ...availableMunicipalities.map((value) => [value, value])]} />
         <SelectField label="Zona" value={filters.zone} onChange={(event) => updateFilter("zone", event.target.value)} options={[["", "Todas as zonas"], ...availableZones.map((value) => [value, value])]} />
         <div className="button-row">
           <button className="btn outline danger-text" type="button" onClick={() => window.print()}>PDF</button>
