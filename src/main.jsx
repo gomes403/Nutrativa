@@ -159,7 +159,7 @@ const gradesByEducationType = {
 
 const evaluationSectionDefaults = {
   eatingHabits: {
-    enabled: true,
+    enabled: false,
     friedFoods: false,
     skipMeals: false,
     sweets: false,
@@ -182,7 +182,7 @@ const evaluationSectionDefaults = {
     notes: "",
   },
   record24h: {
-    enabled: true,
+    enabled: false,
     breakfast: "",
     morningSnack: "",
     lunch: "",
@@ -200,7 +200,7 @@ const evaluationSectionDefaults = {
     notes: "",
   },
   diagnosis: {
-    enabled: true,
+    enabled: false,
     notes: "",
   },
   mealPlan: {
@@ -613,6 +613,46 @@ function App() {
     return { ok: failed === 0, imported, failed };
   };
 
+  const startEvaluation = async (payload) => {
+    if (!activeCampaign) {
+      showToast("Nenhuma campanha ativa foi encontrada. O administrador precisa cadastrar uma campanha com data de inicio e fim para liberar as avaliacoes.", "error");
+      return false;
+    }
+
+    try {
+      const response = await apiFetch("/api/evaluations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (response.status === 401) return false;
+      if (!response.ok) throw new Error(await readError(response, "Nao foi possivel iniciar o atendimento."));
+      const savedEvaluation = await response.json();
+      await refresh();
+      showToast("Atendimento iniciado. O aluno agora aparece como em avaliacao para os demais nutricionistas.");
+      return savedEvaluation;
+    } catch (error) {
+      showToast(error.message || "Falha ao iniciar atendimento.", "error");
+      return false;
+    }
+  };
+
+  const releaseEvaluation = async (id) => {
+    if (!id) return true;
+
+    try {
+      const response = await apiFetch(`/api/evaluations/${id}`, { method: "DELETE" });
+      if (response.status === 401) return false;
+      if (!response.ok) throw new Error(await readError(response, "Nao foi possivel liberar o atendimento."));
+      await refresh();
+      showToast("Atendimento liberado.");
+      return true;
+    } catch (error) {
+      showToast(error.message || "Falha ao liberar atendimento.", "error");
+      return false;
+    }
+  };
+
   const saveSettings = async (payload) => {
     try {
       const response = await apiFetch("/api/settings", {
@@ -666,7 +706,7 @@ function App() {
   }
 
   return (
-    <DataContext.Provider value={{ currentUser, data, activeCampaign, refresh, saveRecord, deleteRecord, clearCollection, importRecords, saveSettings, resetUserPassword, showToast, logout }}>
+    <DataContext.Provider value={{ currentUser, data, activeCampaign, refresh, saveRecord, deleteRecord, clearCollection, importRecords, startEvaluation, releaseEvaluation, saveSettings, resetUserPassword, showToast, logout }}>
       <Shell route={route} go={go} onLogout={logout}>
         {toast && <div className={`toast ${toast.type}`}>{toast.text}</div>}
         {isBootstrapping && <div className="alert">Carregando dados do sistema...</div>}
@@ -969,7 +1009,7 @@ function Dashboard({ go }) {
 function NutritionistDashboard({ go }) {
   const { data, currentUser, activeCampaign } = useAppData();
   const context = useMemo(() => getNutritionistContext(data, currentUser), [data, currentUser]);
-  const campaignEvaluations = useMemo(() => getEvaluationsForCampaign(context.myEvaluations, activeCampaign), [context.myEvaluations, activeCampaign]);
+  const campaignEvaluations = useMemo(() => getEvaluationsForCampaign(context.myEvaluations, activeCampaign).filter(isEvaluationFinalized), [context.myEvaluations, activeCampaign]);
   const campaignEvaluationByStudentId = useMemo(() => indexEvaluationsByStudent(campaignEvaluations), [campaignEvaluations]);
   const pendingStudents = context.linkedStudents.filter((student) => !campaignEvaluationByStudentId[student.id]).length;
   const evaluationsBySchool = context.linkedSchools.map((school) => [
@@ -1027,8 +1067,9 @@ function NutritionistDashboard({ go }) {
 }
 
 function NutritionEvaluationsPage({ go }) {
-  const { data, currentUser, activeCampaign } = useAppData();
+  const { data, currentUser, activeCampaign, startEvaluation, releaseEvaluation, showToast } = useAppData();
   const context = useMemo(() => getNutritionistContext(data, currentUser), [data, currentUser]);
+  const currentUserRecord = findById(data.users, currentUser?.id);
   const [filters, setFilters] = useState({
     schoolId: "",
     grade: "",
@@ -1036,16 +1077,16 @@ function NutritionEvaluationsPage({ go }) {
     classroom: "",
     search: "",
   });
-  const campaignEvaluations = useMemo(() => getEvaluationsForCampaign(context.myEvaluations, activeCampaign), [context.myEvaluations, activeCampaign]);
+  const campaignEvaluations = useMemo(() => getEvaluationsForCampaign(data.evaluations, activeCampaign), [data.evaluations, activeCampaign]);
   const campaignEvaluationByStudentId = useMemo(() => indexEvaluationsByStudent(campaignEvaluations), [campaignEvaluations]);
-  const studentsToEvaluate = useMemo(
-    () => context.linkedStudents.filter((student) => !campaignEvaluationByStudentId[student.id]),
+  const studentsForAttendance = useMemo(
+    () => context.linkedStudents.filter((student) => !isEvaluationFinalized(campaignEvaluationByStudentId[student.id])),
     [context.linkedStudents, campaignEvaluationByStudentId],
   );
 
   const filteredStudents = useMemo(() => {
     const search = normalizeCsvKey(filters.search);
-    return studentsToEvaluate.filter((student) => {
+    return studentsForAttendance.filter((student) => {
       const school = findById(data.schools, student.schoolId);
       const matchesSearch = !search || [
         student.name,
@@ -1059,11 +1100,35 @@ function NutritionEvaluationsPage({ go }) {
       const matchesClassroom = !filters.classroom || String(student.classroom) === String(filters.classroom);
       return matchesSearch && matchesSchool && matchesGrade && matchesShift && matchesClassroom;
     });
-  }, [studentsToEvaluate, data.schools, filters]);
+  }, [studentsForAttendance, data.schools, filters]);
 
-  const gradeOptions = [["", "Todas as series"], ...uniqueValues(studentsToEvaluate.map((student) => student.grade)).map((value) => [value, value])];
-  const shiftOptions = [["", "Todos os turnos"], ...uniqueValues(studentsToEvaluate.map((student) => student.shift)).map((value) => [value, value])];
-  const classroomOptions = [["", "Todas as turmas"], ...uniqueValues(studentsToEvaluate.map((student) => student.classroom)).map((value) => [value, value])];
+  const gradeOptions = [["", "Todas as series"], ...uniqueValues(studentsForAttendance.map((student) => student.grade)).map((value) => [value, value])];
+  const shiftOptions = [["", "Todos os turnos"], ...uniqueValues(studentsForAttendance.map((student) => student.shift)).map((value) => [value, value])];
+  const classroomOptions = [["", "Todas as turmas"], ...uniqueValues(studentsForAttendance.map((student) => student.classroom)).map((value) => [value, value])];
+
+  const beginAttendance = async (student, evaluation) => {
+    const ownedInProgress = evaluation && isEvaluationInProgress(evaluation) && String(evaluation.nutritionistUserId) === String(currentUser?.id);
+    if (ownedInProgress) {
+      go("/avaliacoes/" + student.id);
+      return;
+    }
+
+    if (evaluation && isEvaluationInProgress(evaluation)) {
+      showToast("Aluno em avaliação por " + (evaluation.nutritionistName || "outro nutricionista") + ".", "error");
+      return;
+    }
+
+    const school = findById(data.schools, student.schoolId);
+    const started = await startEvaluation(createEvaluationStartPayload({
+      student,
+      school,
+      currentUser,
+      nutritionistLink: context.nutritionistLink,
+      userRecord: currentUserRecord,
+      activeCampaign,
+    }));
+    if (started) go("/avaliacoes/" + student.id);
+  };
 
   if (!context.nutritionistLink) {
     return <PageCard title="Avaliacoes" crumb="Nutricionista / Avaliacoes"><EmptyState text="Nenhum vinculo de nutricionista foi encontrado para o seu usuario." /></PageCard>;
@@ -1075,7 +1140,7 @@ function NutritionEvaluationsPage({ go }) {
       <PageCard title="Alunos para Avaliacao" crumb="Nutricionista / Avaliacoes">
         <div className="alert error">
           Nenhuma campanha ativa foi encontrada. O administrador precisa cadastrar uma campanha com data de inicio e fim vigente para liberar as avaliacoes.
-          {latestCampaign ? ` Ultima campanha registrada: ${latestCampaign.name} (${formatDate(latestCampaign.startDate)} a ${formatDate(latestCampaign.endDate)}).` : ""}
+          {latestCampaign ? " Ultima campanha registrada: " + latestCampaign.name + " (" + formatDate(latestCampaign.startDate) + " a " + formatDate(latestCampaign.endDate) + ")." : ""}
         </div>
         <EmptyState text="As avaliacoes estao bloqueadas ate que exista uma campanha ativa." />
       </PageCard>
@@ -1087,7 +1152,7 @@ function NutritionEvaluationsPage({ go }) {
       <div className="alert success">
         Campanha ativa: <strong>{activeCampaign.name}</strong> | Periodo de {formatDate(activeCampaign.startDate)} ate {formatDate(activeCampaign.endDate)}.
       </div>
-      {!studentsToEvaluate.length && (
+      {!studentsForAttendance.length && (
         <div className="alert success">
           Todos os alunos vinculados ao seu atendimento ja foram avaliados nesta campanha.
         </div>
@@ -1131,7 +1196,7 @@ function NutritionEvaluationsPage({ go }) {
             <input
               value={filters.search}
               onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))}
-              placeholder="Nome do aluno, responsavel, matricula ou escola"
+              placeholder="Buscar aluno, responsavel ou escola"
             />
           </label>
         </div>
@@ -1141,21 +1206,36 @@ function NutritionEvaluationsPage({ go }) {
       </div>
       <DataBlock>
         <Table
-          headers={["Nome", "Serie", "Turma", "Escola", "Nutricionista", "Acoes"]}
+          headers={["Nome", "Serie", "Turma", "Escola", "Status", "Nutricionista", "Acoes"]}
           rows={filteredStudents.map((student) => {
             const school = findById(data.schools, student.schoolId);
+            const evaluation = campaignEvaluationByStudentId[student.id];
+            const inProgress = isEvaluationInProgress(evaluation);
+            const ownedInProgress = inProgress && String(evaluation.nutritionistUserId) === String(currentUser?.id);
+            const lockedByOther = inProgress && !ownedInProgress;
+            const statusLabel = lockedByOther ? "Aluno em avaliação" : ownedInProgress ? "Em avaliação por você" : "Disponível";
             return [
               student.name,
               student.grade || "-",
               student.classroom || "-",
               school?.name || "-",
-              currentUser?.name || "-",
+              <span className={"status-chip " + (lockedByOther ? "blocked" : inProgress ? "warning" : "available")}>{statusLabel}</span>,
+              evaluation?.nutritionistName || currentUser?.name || "-",
               <div className="actions">
-                <button className="mini warn" type="button" onClick={() => go(`/avaliacoes/${student.id}`)}>Avaliar</button>
+                {lockedByOther ? (
+                  <button className="mini muted" type="button" disabled>Em avaliação</button>
+                ) : ownedInProgress ? (
+                  <>
+                    <button className="mini warn" type="button" onClick={() => beginAttendance(student, evaluation)}>Continuar</button>
+                    <button className="mini secondary" type="button" onClick={() => releaseEvaluation(evaluation.id)}>Liberar</button>
+                  </>
+                ) : (
+                  <button className="mini warn" type="button" onClick={() => beginAttendance(student, evaluation)}>Avaliar</button>
+                )}
               </div>,
             ];
           })}
-          empty={studentsToEvaluate.length ? "Nenhum aluno pendente foi encontrado para os filtros selecionados." : "Todos os alunos vinculados ja foram avaliados nesta campanha."}
+          empty={studentsForAttendance.length ? "Nenhum aluno pendente foi encontrado para os filtros selecionados." : "Todos os alunos vinculados ja foram avaliados nesta campanha."}
         />
       </DataBlock>
     </PageCard>
@@ -1163,18 +1243,42 @@ function NutritionEvaluationsPage({ go }) {
 }
 
 function NutritionEvaluationForm({ studentId, go }) {
-  const { data, currentUser, saveRecord, activeCampaign, showToast } = useAppData();
+  const { data, currentUser, saveRecord, startEvaluation, releaseEvaluation, activeCampaign, showToast } = useAppData();
   const context = useMemo(() => getNutritionistContext(data, currentUser), [data, currentUser]);
-  const campaignEvaluations = useMemo(() => getEvaluationsForCampaign(context.myEvaluations, activeCampaign), [context.myEvaluations, activeCampaign]);
+  const startAttemptedRef = useRef(false);
+  const startedEvaluationRef = useRef(null);
+  const campaignEvaluations = useMemo(() => getEvaluationsForCampaign(data.evaluations, activeCampaign), [data.evaluations, activeCampaign]);
   const student = findById(context.linkedStudents, studentId);
   const school = student ? findById(data.schools, student.schoolId) : null;
   const currentUserRecord = findById(data.users, currentUser?.id);
   const existingEvaluation = campaignEvaluations.find((evaluation) => String(evaluation.studentId) === String(studentId));
+  const ownsExistingEvaluation = existingEvaluation && String(existingEvaluation.nutritionistUserId) === String(currentUser?.id);
+  const lockedByOther = existingEvaluation && isEvaluationInProgress(existingEvaluation) && !ownsExistingEvaluation;
+  const finalizedByOther = existingEvaluation && isEvaluationFinalized(existingEvaluation) && !ownsExistingEvaluation;
   const [draft, setDraft] = useState(() => createEvaluationDraft(existingEvaluation, student, currentUser, context.nutritionistLink, school, currentUserRecord));
 
   useEffect(() => {
     setDraft(createEvaluationDraft(existingEvaluation, student, currentUser, context.nutritionistLink, school, currentUserRecord));
   }, [existingEvaluation, student, currentUser, context.nutritionistLink, school, currentUserRecord]);
+
+  useEffect(() => {
+    if (!student || !activeCampaign || existingEvaluation || startAttemptedRef.current) return;
+    startAttemptedRef.current = true;
+    startEvaluation(createEvaluationStartPayload({
+      student,
+      school,
+      currentUser,
+      nutritionistLink: context.nutritionistLink,
+      userRecord: currentUserRecord,
+      activeCampaign,
+    })).then((started) => {
+      if (!started) {
+        go("/avaliacoes");
+        return;
+      }
+      startedEvaluationRef.current = started;
+    });
+  }, [activeCampaign, context.nutritionistLink, currentUser, currentUserRecord, existingEvaluation, go, school, startEvaluation, student]);
 
   const evaluatedAt = draft.evaluatedAt || existingEvaluation?.evaluatedAt || new Date().toISOString();
   const anthropometryResult = useMemo(() => evaluateAnthropometricStatus({
@@ -1207,6 +1311,30 @@ function NutritionEvaluationForm({ studentId, go }) {
       </PageCard>
     );
   }
+
+  if (lockedByOther || finalizedByOther) {
+    const message = lockedByOther
+      ? "Este aluno está em avaliação por " + (existingEvaluation.nutritionistName || "outro nutricionista") + "."
+      : "Este aluno já teve a avaliação finalizada nesta campanha por " + (existingEvaluation.nutritionistName || "outro nutricionista") + ".";
+    return (
+      <PageCard title="Avaliacao Nutricional" crumb="Nutricionista / Avaliacoes">
+        <div className="alert warn">{message}</div>
+        <div className="form-actions">
+          <button className="btn outline muted-btn" type="button" onClick={() => go("/avaliacoes")}>Voltar</button>
+        </div>
+      </PageCard>
+    );
+  }
+
+  const leaveEvaluation = async () => {
+    const attendanceEvaluation = existingEvaluation || startedEvaluationRef.current;
+    const ownsAttendance = attendanceEvaluation && String(attendanceEvaluation.nutritionistUserId) === String(currentUser?.id);
+    if (ownsAttendance && isEvaluationInProgress(attendanceEvaluation)) {
+      const released = await releaseEvaluation(attendanceEvaluation.id);
+      if (!released) return;
+    }
+    go("/avaliacoes");
+  };
 
   const updateAnthropometry = (field, value) => {
     setDraft((current) => ({
@@ -1285,14 +1413,14 @@ function NutritionEvaluationForm({ studentId, go }) {
       updatedAt: nowIso,
     };
 
-    const saved = await saveRecord("evaluations", payload, existingEvaluation?.id);
+    const saved = await saveRecord("evaluations", payload, existingEvaluation?.id || startedEvaluationRef.current?.id);
     if (saved) go("/avaliacoes");
   };
 
   return (
     <PageCard title="Avaliacao Nutricional do Aluno" crumb="Nutricionista / Avaliacoes">
       <div className="evaluation-actions">
-        <button className="btn outline muted-btn" type="button" onClick={() => go("/avaliacoes")}>Sair do Atendimento</button>
+        <button className="btn outline muted-btn" type="button" onClick={leaveEvaluation}>Sair do Atendimento</button>
         <button className="btn primary" type="button" onClick={saveEvaluation}><Save size={16} /> Salvar Avaliacao</button>
       </div>
 
@@ -1432,7 +1560,7 @@ function NutritionistReportsPage({ go }) {
       <DataBlock>
         <Table
           headers={["Aluno", "Escola", "Serie", "Data", "Status", "Acoes"]}
-          rows={context.myEvaluations.map((evaluation) => [
+          rows={context.myEvaluations.filter(isEvaluationFinalized).map((evaluation) => [
             evaluation.studentName || findById(data.students, evaluation.studentId)?.name || "-",
             evaluation.schoolName || findById(data.schools, evaluation.schoolId)?.name || "-",
             evaluation.studentGrade || "-",
@@ -2496,7 +2624,7 @@ function ReportSchools() {
       if (current) current.studentCount += 1;
     }
 
-    for (const evaluation of data.evaluations || []) {
+    for (const evaluation of (data.evaluations || []).filter(isEvaluationFinalized)) {
       const current = grouped.get(evaluation.schoolId);
       if (!current) continue;
 
@@ -2785,7 +2913,7 @@ function ReportIndividual({ go }) {
     endDate: "",
   });
 
-  const evaluationRows = useMemo(() => (data.evaluations || []).map((evaluation) => {
+  const evaluationRows = useMemo(() => (data.evaluations || []).filter(isEvaluationFinalized).map((evaluation) => {
     const student = findById(data.students, evaluation.studentId);
     const school = findById(data.schools, evaluation.schoolId);
     return {
@@ -3226,7 +3354,7 @@ function Table({ headers, rows, empty = "Nenhum registro encontrado." }) {
       <table>
         <thead><tr>{headers.map((header) => <th key={header}>{header}</th>)}</tr></thead>
         <tbody>
-          {rows.length ? rows.map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, cellIndex) => <td key={cellIndex}>{cell}</td>)}</tr>) : (
+          {rows.length ? rows.map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, cellIndex) => <td key={cellIndex} data-label={headers[cellIndex] || ""}>{cell}</td>)}</tr>) : (
             <tr><td colSpan={headers.length}><EmptyState text={empty} compact /></td></tr>
           )}
         </tbody>
@@ -3790,8 +3918,42 @@ function getEvaluationsForCampaign(evaluations = [], campaign) {
   return evaluations.filter((evaluation) => isEvaluationInCampaign(evaluation, campaign));
 }
 
+function normalizeEvaluationStatus(status) {
+  return normalizeCsvKey(status || "Finalizada");
+}
+
+function isEvaluationInProgress(evaluation) {
+  return normalizeEvaluationStatus(evaluation?.status) === "em avaliacao";
+}
+
+function isEvaluationFinalized(evaluation) {
+  return !!evaluation && normalizeEvaluationStatus(evaluation.status) === "finalizada";
+}
+
+function getEvaluationPriority(evaluation) {
+  if (isEvaluationInProgress(evaluation)) return 3;
+  if (isEvaluationFinalized(evaluation)) return 2;
+  return 1;
+}
+
+function getEvaluationTime(evaluation) {
+  const value = evaluation?.updatedAt || evaluation?.evaluatedAt || evaluation?.createdAt || "";
+  const parsed = value ? new Date(value).getTime() : 0;
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function indexEvaluationsByStudent(evaluations = []) {
-  return Object.fromEntries(evaluations.map((evaluation) => [evaluation.studentId, evaluation]));
+  return evaluations.reduce((acc, evaluation) => {
+    const studentId = evaluation?.studentId;
+    if (!studentId) return acc;
+    const current = acc[studentId];
+    const currentPriority = getEvaluationPriority(current);
+    const nextPriority = getEvaluationPriority(evaluation);
+    if (!current || nextPriority > currentPriority || (nextPriority === currentPriority && getEvaluationTime(evaluation) >= getEvaluationTime(current))) {
+      acc[studentId] = evaluation;
+    }
+    return acc;
+  }, {});
 }
 
 function validateCampaignRecord(payload) {
@@ -3890,6 +4052,33 @@ function getNutritionistContext(data, currentUser) {
     linkedStudents,
     myEvaluations,
     evaluationByStudentId,
+  };
+}
+
+function createEvaluationStartPayload({ student, school, currentUser, nutritionistLink, userRecord, activeCampaign, existingEvaluation = null }) {
+  const nowIso = new Date().toISOString();
+  return {
+    ...createEvaluationDraft(existingEvaluation, student, currentUser, nutritionistLink, school, userRecord),
+    status: "Em avaliação",
+    studentId: student?.id || "",
+    schoolId: student?.schoolId || "",
+    studentName: student?.name || "",
+    studentGrade: student?.grade || "",
+    studentClassroom: student?.classroom || "",
+    studentShift: student?.shift || "",
+    schoolName: school?.name || "",
+    campaignId: activeCampaign?.id || "",
+    campaignName: activeCampaign?.name || "",
+    campaignStartDate: activeCampaign?.startDate || "",
+    campaignEndDate: activeCampaign?.endDate || "",
+    nutritionistUserId: currentUser?.id || "",
+    nutritionistId: nutritionistLink?.id || currentUser?.id || "",
+    nutritionistName: currentUser?.name || "",
+    crn: nutritionistLink?.crn || userRecord?.crn || "",
+    attendanceStartedAt: existingEvaluation?.attendanceStartedAt || nowIso,
+    createdAt: existingEvaluation?.createdAt || nowIso,
+    updatedAt: nowIso,
+    evaluatedAt: existingEvaluation?.evaluatedAt || "",
   };
 }
 

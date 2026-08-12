@@ -175,6 +175,68 @@ function findActiveCampaign(campaigns = [], today = startOfToday()) {
   return campaigns.find((campaign) => isCampaignActive(campaign, today)) || null;
 }
 
+function normalizeText(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function normalizeEvaluationStatus(status) {
+  return normalizeText(status || "Finalizada");
+}
+
+function isEvaluationInProgress(evaluation) {
+  return normalizeEvaluationStatus(evaluation?.status) === "em avaliacao";
+}
+
+function isEvaluationFinalized(evaluation) {
+  return !!evaluation && normalizeEvaluationStatus(evaluation.status) === "finalizada";
+}
+
+function isEvaluationForCampaign(evaluation, campaign) {
+  if (!evaluation || !campaign) return false;
+  if (evaluation.campaignId && String(evaluation.campaignId) === String(campaign.id)) return true;
+  if (evaluation.campaignName && normalizeText(evaluation.campaignName) === normalizeText(campaign.name)) return true;
+  return false;
+}
+
+function applyActiveCampaignToEvaluation(item, activeCampaign) {
+  item.campaignId = activeCampaign.id;
+  item.campaignName = activeCampaign.name;
+  item.campaignStartDate = activeCampaign.startDate;
+  item.campaignEndDate = activeCampaign.endDate;
+
+  if (isEvaluationInProgress(item)) {
+    const nowIso = new Date().toISOString();
+    item.attendanceStartedAt = item.attendanceStartedAt || nowIso;
+    item.updatedAt = item.updatedAt || nowIso;
+  }
+}
+
+function findEvaluationConflict(evaluations = [], item, activeCampaign) {
+  return evaluations.find((evaluation) => {
+    if (String(evaluation.id) === String(item.id)) return false;
+    if (String(evaluation.studentId || "") !== String(item.studentId || "")) return false;
+    if (!isEvaluationForCampaign(evaluation, activeCampaign)) return false;
+    return isEvaluationInProgress(evaluation) || isEvaluationFinalized(evaluation);
+  }) || null;
+}
+
+function evaluationConflictMessage(conflict) {
+  const studentName = conflict?.studentName || "Este aluno";
+  const nutritionistName = conflict?.nutritionistName || "outro nutricionista";
+  if (isEvaluationInProgress(conflict)) {
+    return studentName + " ja esta em avaliacao por " + nutritionistName + ".";
+  }
+  return studentName + " ja teve avaliacao finalizada nesta campanha por " + nutritionistName + ".";
+}
+
+function isEvaluationOwnedByRequestUser(evaluation, authUser) {
+  return String(evaluation?.nutritionistUserId || "") === String(authUser?.id || "");
+}
+
 function validateCampaignPayload(payload) {
   const name = String(payload?.name || "").trim();
   const startDate = parseDateOnly(payload?.startDate);
@@ -250,10 +312,9 @@ function collectionRoute(name) {
           error: "Nenhuma campanha ativa foi encontrada. O administrador precisa cadastrar uma campanha com data de inicio e fim para liberar as avaliacoes.",
         });
       }
-      item.campaignId = activeCampaign.id;
-      item.campaignName = activeCampaign.name;
-      item.campaignStartDate = activeCampaign.startDate;
-      item.campaignEndDate = activeCampaign.endDate;
+      applyActiveCampaignToEvaluation(item, activeCampaign);
+      const conflict = findEvaluationConflict(rows, item, activeCampaign);
+      if (conflict) return res.status(409).json({ error: evaluationConflictMessage(conflict) });
     }
 
     await dataStore.createCollectionItem(name, item);
@@ -286,10 +347,13 @@ function collectionRoute(name) {
           error: "Nenhuma campanha ativa foi encontrada. O administrador precisa cadastrar uma campanha com data de inicio e fim para liberar as avaliacoes.",
         });
       }
-      item.campaignId = activeCampaign.id;
-      item.campaignName = activeCampaign.name;
-      item.campaignStartDate = activeCampaign.startDate;
-      item.campaignEndDate = activeCampaign.endDate;
+      if (isEvaluationInProgress(currentItem) && !isEvaluationOwnedByRequestUser(currentItem, req.authUser)) {
+        return res.status(403).json({ error: "Este atendimento pertence a outro nutricionista." });
+      }
+      const rows = await dataStore.getCollection(name);
+      applyActiveCampaignToEvaluation(item, activeCampaign);
+      const conflict = findEvaluationConflict(rows, item, activeCampaign);
+      if (conflict) return res.status(409).json({ error: evaluationConflictMessage(conflict) });
     }
 
     await dataStore.updateCollectionItem(name, req.params.id, item);
@@ -297,6 +361,13 @@ function collectionRoute(name) {
   });
 
   app.delete(`/api/${name}/:id`, async (req, res) => {
+    if (name === "evaluations") {
+      const currentItem = await dataStore.getCollectionItem(name, req.params.id);
+      if (!currentItem) return res.status(404).json({ error: "Registro nao encontrado." });
+      const canDelete = !isEvaluationInProgress(currentItem) || isEvaluationOwnedByRequestUser(currentItem, req.authUser) || req.authUser?.profile === "Administrador";
+      if (!canDelete) return res.status(403).json({ error: "Este atendimento pertence a outro nutricionista." });
+    }
+
     const deleted = await dataStore.deleteCollectionItem(name, req.params.id);
     if (!deleted) return res.status(404).json({ error: "Registro nao encontrado." });
     res.status(204).end();
@@ -375,6 +446,7 @@ app.get("/api/bootstrap", async (_req, res) => {
   const users = store.users || [];
   const nutritionists = store.nutritionists || [];
   const evaluations = store.evaluations || [];
+  const finalizedEvaluations = evaluations.filter(isEvaluationFinalized);
   const news = await fetchLatestCfnNews();
   const activeUsers = listActiveUsers();
   const studentsByYearMap = students.reduce((acc, student) => {
@@ -406,7 +478,7 @@ app.get("/api/bootstrap", async (_req, res) => {
         }))
         .sort((a, b) => Number(b.students || 0) - Number(a.students || 0))
         .slice(0, 5),
-      recentEvaluations: evaluations.slice(-5).reverse(),
+      recentEvaluations: finalizedEvaluations.slice(-5).reverse(),
     },
   });
 });
