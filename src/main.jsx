@@ -73,7 +73,10 @@ ChartJS.register(CategoryScale, LinearScale, BarController, BarElement, LineCont
 
 const apiBase = "";
 const authStorageKey = "abdesm-auth-token";
+const authUserStorageKey = "abdesm-auth-user";
 const consentStorageKey = "abdesm-login-consent";
+const dataCacheStorageKey = "abdesm-data-cache";
+const offlineQueueStorageKey = "abdesm-offline-evaluation-queue";
 const emptyData = {
   schools: [],
   students: [],
@@ -118,6 +121,8 @@ const defaultConsentState = {
   optionalCookiesAccepted: false,
   locationAccepted: false,
   location: null,
+  installAccepted: false,
+  installedAt: "",
   dismissedOptional: false,
 };
 
@@ -248,17 +253,85 @@ function useAppData() {
   return context;
 }
 
+function isAppInstalled() {
+  if (typeof window === "undefined") return false;
+  return window.matchMedia?.("(display-mode: standalone)")?.matches || window.navigator?.standalone === true;
+}
+
+function registerServiceWorker() {
+  if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+  });
+}
+
+function readJsonStorage(key, fallback) {
+  try {
+    const saved = window.localStorage.getItem(key);
+    return saved ? JSON.parse(saved) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeJsonStorage(key, value) {
+  window.localStorage.setItem(key, JSON.stringify(value));
+}
+
+function normalizeAppData(payload = emptyData) {
+  return { ...emptyData, ...payload, settings: { ...emptyData.settings, ...(payload.settings || {}) } };
+}
+
+function getNetworkErrorMessage(error) {
+  const message = String(error?.message || error || "");
+  if (error?.name === "TypeError" || /load failed|failed to fetch|networkerror|internet|network/i.test(message)) {
+    return "Sem conexao com o servidor. A acao foi guardada para sincronizar automaticamente.";
+  }
+  return "";
+}
+
+function createOfflineId() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return "offline-" + crypto.randomUUID();
+  return "offline-" + Date.now() + "-" + Math.random().toString(16).slice(2);
+}
+
+function mergeEvaluationsWithLocalQueue(evaluations = [], queue = []) {
+  const merged = evaluations.slice();
+  queue.forEach((item) => {
+    if (item.operation === "deleteEvaluation") {
+      const index = merged.findIndex((evaluation) => String(evaluation.id) === String(item.id));
+      if (index >= 0) merged.splice(index, 1);
+      return;
+    }
+    if (item.operation !== "upsertEvaluation" || !item.payload) return;
+    const nextEvaluation = { ...item.payload, offlinePending: true };
+    const index = merged.findIndex((evaluation) => String(evaluation.id) === String(nextEvaluation.id));
+    if (index >= 0) merged[index] = nextEvaluation;
+    else merged.push(nextEvaluation);
+  });
+  return merged;
+}
+
 function App() {
   const [route, go] = useRoute();
-  const [data, setData] = useState(emptyData);
+  const [offlineQueue, setOfflineQueue] = useState(() => readJsonStorage(offlineQueueStorageKey, []));
+  const [data, setData] = useState(() => {
+    const cached = readJsonStorage(dataCacheStorageKey, null);
+    const queue = readJsonStorage(offlineQueueStorageKey, []);
+    if (!cached) return emptyData;
+    const normalized = normalizeAppData(cached);
+    return { ...normalized, evaluations: mergeEvaluationsWithLocalQueue(normalized.evaluations || [], queue) };
+  });
   const [toast, setToast] = useState(null);
   const [isBootstrapping, setIsBootstrapping] = useState(false);
   const [apiUnavailable, setApiUnavailable] = useState(false);
   const [authToken, setAuthToken] = useState(() => window.localStorage.getItem(authStorageKey) || "");
-  const [currentUser, setCurrentUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(() => readJsonStorage(authUserStorageKey, null));
   const [authReady, setAuthReady] = useState(false);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [loginError, setLoginError] = useState("");
+  const [installPromptEvent, setInstallPromptEvent] = useState(null);
+  const [isInstallingApp, setIsInstallingApp] = useState(false);
   const [consentState, setConsentState] = useState(() => {
     try {
       const saved = JSON.parse(window.localStorage.getItem(consentStorageKey) || "null");
@@ -268,9 +341,59 @@ function App() {
     }
   });
   const activeCampaign = useMemo(() => getActiveCampaign(data.campaigns), [data.campaigns]);
+  const appInstallReady = isAppInstalled() || consentState.installAccepted;
 
   const showToast = (text, type = "success") => {
     setToast({ text, type, id: Date.now() });
+  };
+
+  const persistCurrentUser = (user) => {
+    if (user) writeJsonStorage(authUserStorageKey, user);
+    else window.localStorage.removeItem(authUserStorageKey);
+    setCurrentUser(user || null);
+  };
+
+  const persistOfflineQueue = (nextQueue) => {
+    writeJsonStorage(offlineQueueStorageKey, nextQueue);
+    setOfflineQueue(nextQueue);
+    return nextQueue;
+  };
+
+  const applyLocalEvaluation = (evaluation) => {
+    setData((current) => ({
+      ...current,
+      evaluations: mergeEvaluationsWithLocalQueue(
+        (current.evaluations || []).filter((item) => String(item.id) !== String(evaluation.id)),
+        [{ operation: "upsertEvaluation", payload: evaluation }],
+      ),
+    }));
+  };
+
+  const removeLocalEvaluation = (id) => {
+    setData((current) => ({
+      ...current,
+      evaluations: (current.evaluations || []).filter((evaluation) => String(evaluation.id) !== String(id)),
+    }));
+  };
+
+  const queueOfflineEvaluation = (payload) => {
+    const evaluation = { ...payload, id: payload.id || createOfflineId(), offlinePending: true, updatedAt: new Date().toISOString() };
+    const nextQueue = [
+      ...offlineQueue.filter((item) => !(item.operation === "upsertEvaluation" && String(item.payload?.id) === String(evaluation.id)) && !(item.operation === "deleteEvaluation" && String(item.id) === String(evaluation.id))),
+      { id: evaluation.id, operation: "upsertEvaluation", payload: evaluation, queuedAt: new Date().toISOString() },
+    ];
+    persistOfflineQueue(nextQueue);
+    applyLocalEvaluation(evaluation);
+    return evaluation;
+  };
+
+  const queueOfflineDeleteEvaluation = (id) => {
+    const nextQueue = [
+      ...offlineQueue.filter((item) => String(item.id) !== String(id) && String(item.payload?.id) !== String(id)),
+      { id, operation: "deleteEvaluation", queuedAt: new Date().toISOString() },
+    ];
+    persistOfflineQueue(nextQueue);
+    removeLocalEvaluation(id);
   };
 
   const persistAuthToken = (token) => {
@@ -286,7 +409,7 @@ function App() {
 
   const clearSession = () => {
     persistAuthToken("");
-    setCurrentUser(null);
+    persistCurrentUser(null);
     setData(emptyData);
     setApiUnavailable(false);
     setIsBootstrapping(false);
@@ -342,11 +465,17 @@ function App() {
       if (response.status === 401) return false;
       if (!response.ok) throw new Error("API indisponivel");
       const payload = await response.json();
-      setData({ ...emptyData, ...payload, settings: { ...emptyData.settings, ...(payload.settings || {}) } });
+      writeJsonStorage(dataCacheStorageKey, payload);
+      const normalized = normalizeAppData(payload);
+      setData({ ...normalized, evaluations: mergeEvaluationsWithLocalQueue(normalized.evaluations || [], offlineQueue) });
       setApiUnavailable(false);
       return true;
     } catch {
-      setData(emptyData);
+      const cached = readJsonStorage(dataCacheStorageKey, null);
+      if (cached) {
+        const normalized = normalizeAppData(cached);
+        setData({ ...normalized, evaluations: mergeEvaluationsWithLocalQueue(normalized.evaluations || [], offlineQueue) });
+      }
       setApiUnavailable(true);
       return false;
     } finally {
@@ -375,11 +504,16 @@ function App() {
 
         const payload = await response.json();
         if (!active) return;
-        setCurrentUser(payload.user);
+        persistCurrentUser(payload.user);
         setLoginError("");
         await refresh(authToken);
-      } catch {
+      } catch (error) {
         if (!active) return;
+        if (getNetworkErrorMessage(error) && currentUser) {
+          await refresh(authToken);
+          setLoginError("");
+          return;
+        }
         clearSession();
         setLoginError("Nao foi possivel validar sua sessao.");
       } finally {
@@ -406,6 +540,43 @@ function App() {
     const viewLabel = currentUser ? resolveRouteLabel(route) : "Login";
     document.title = `${systemName} | ${viewLabel}`;
   }, [currentUser, data.settings, route]);
+
+  useEffect(() => {
+    registerServiceWorker();
+  }, []);
+
+  useEffect(() => {
+    if (isAppInstalled() && !consentState.installAccepted) {
+      updateConsentState((current) => ({
+        ...current,
+        installAccepted: true,
+        installedAt: current.installedAt || new Date().toISOString(),
+      }));
+    }
+  }, [consentState.installAccepted]);
+
+  useEffect(() => {
+    const captureInstallPrompt = (event) => {
+      event.preventDefault();
+      setInstallPromptEvent(event);
+    };
+    const confirmInstalled = () => {
+      setInstallPromptEvent(null);
+      updateConsentState((current) => ({
+        ...current,
+        installAccepted: true,
+        installedAt: new Date().toISOString(),
+      }));
+      showToast("Aplicativo instalado. O login foi liberado neste dispositivo.");
+    };
+
+    window.addEventListener("beforeinstallprompt", captureInstallPrompt);
+    window.addEventListener("appinstalled", confirmInstalled);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", captureInstallPrompt);
+      window.removeEventListener("appinstalled", confirmInstalled);
+    };
+  }, []);
 
   const requestRealLocation = async () => {
     if (!("geolocation" in navigator)) {
@@ -448,6 +619,66 @@ function App() {
     }
   };
 
+
+  const acceptInstallConsent = async () => {
+    if (isAppInstalled()) {
+      updateConsentState((current) => ({
+        ...current,
+        installAccepted: true,
+        installedAt: current.installedAt || new Date().toISOString(),
+      }));
+      setLoginError("");
+      showToast("Aplicativo ja instalado. O login foi liberado neste dispositivo.");
+      return true;
+    }
+
+    if (!installPromptEvent) {
+      const confirmed = window.confirm("O navegador ainda nao liberou a instalacao automatica.\n\nPara instalar manualmente:\n1. Clique no icone de instalar na barra do navegador ou abra o menu.\n2. Escolha Instalar aplicativo ou Adicionar a tela inicial.\n3. Abra o NUTRATIVA pelo aplicativo instalado.\n\nConfirma que autorizou/realizou a instalacao neste dispositivo?");
+      if (!confirmed) {
+        const message = "A instalacao do aplicativo precisa ser autorizada para liberar o login.";
+        setLoginError(message);
+        showToast(message, "error");
+        return false;
+      }
+
+      updateConsentState((current) => ({
+        ...current,
+        installAccepted: true,
+        installedAt: new Date().toISOString(),
+      }));
+      setLoginError("");
+      showToast("Instalacao autorizada neste dispositivo. O login foi liberado.");
+      return true;
+    }
+
+    setIsInstallingApp(true);
+    try {
+      await installPromptEvent.prompt();
+      const choice = await installPromptEvent.userChoice;
+      if (choice.outcome !== "accepted") {
+        const message = "A instalacao do aplicativo precisa ser aceita para liberar o login.";
+        setLoginError(message);
+        showToast(message, "error");
+        return false;
+      }
+
+      setInstallPromptEvent(null);
+      updateConsentState((current) => ({
+        ...current,
+        installAccepted: true,
+        installedAt: new Date().toISOString(),
+      }));
+      setLoginError("");
+      showToast("Instalacao autorizada. O login foi liberado neste dispositivo.");
+      return true;
+    } catch (error) {
+      setLoginError(error.message || "Nao foi possivel iniciar a instalacao do aplicativo.");
+      showToast(error.message || "Nao foi possivel iniciar a instalacao do aplicativo.", "error");
+      return false;
+    } finally {
+      setIsInstallingApp(false);
+    }
+  };
   const rejectOptionalCookies = () => {
     updateConsentState((current) => ({
       ...current,
@@ -466,6 +697,13 @@ function App() {
       return false;
     }
 
+    if (!appInstallReady) {
+      const message = "Instale o aplicativo neste dispositivo para liberar o login.";
+      setLoginError(message);
+      showToast(message, "error");
+      return false;
+    }
+
     setIsAuthenticating(true);
     setLoginError("");
     try {
@@ -478,6 +716,7 @@ function App() {
           consent: {
             optionalCookiesAccepted: consentState.optionalCookiesAccepted,
             locationAccepted: consentState.locationAccepted,
+            installAccepted: appInstallReady,
           },
           location: consentState.location,
         }),
@@ -489,7 +728,7 @@ function App() {
 
       const payload = await response.json();
       persistAuthToken(payload.token);
-      setCurrentUser(payload.user);
+      persistCurrentUser(payload.user);
       await refresh(payload.token);
       showToast("Login realizado com sucesso.");
       go("/dashboard");
@@ -549,6 +788,11 @@ function App() {
       showToast("Registro salvo com sucesso.");
       return true;
     } catch (error) {
+      if (getNetworkErrorMessage(error) && collection === "evaluations") {
+        queueOfflineEvaluation({ ...payload, id: id || payload.id || createOfflineId() });
+        showToast("Avaliacao salva offline. Ela sera sincronizada automaticamente quando a conexao voltar.");
+        return true;
+      }
       showToast(error.message || "Falha ao salvar registro.", "error");
       return false;
     }
@@ -613,6 +857,54 @@ function App() {
     return { ok: failed === 0, imported, failed };
   };
 
+  const syncOfflineQueue = async (token = authToken) => {
+    const queue = readJsonStorage(offlineQueueStorageKey, []);
+    if (!token || !queue.length) return;
+
+    const remaining = [];
+    let synced = 0;
+    for (const item of queue) {
+      try {
+        if (item.operation === "deleteEvaluation") {
+          const response = await apiFetch("/api/evaluations/" + item.id, { method: "DELETE" }, { token });
+          if (response.status === 404 || response.status === 204 || response.ok) synced += 1;
+          else remaining.push(item);
+          continue;
+        }
+
+        if (item.operation === "upsertEvaluation" && item.payload) {
+          const payload = { ...item.payload };
+          delete payload.offlinePending;
+          const id = payload.id;
+          const usePost = String(id || "").startsWith("offline-");
+          let response = await apiFetch("/api/evaluations" + (usePost ? "" : "/" + id), {
+            method: usePost ? "POST" : "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          }, { token });
+          if (response.status === 404 && !usePost) {
+            response = await apiFetch("/api/evaluations", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            }, { token });
+          }
+          if (response.ok) synced += 1;
+          else remaining.push(item);
+          continue;
+        }
+      } catch {
+        remaining.push(item);
+      }
+    }
+
+    persistOfflineQueue(remaining);
+    if (synced) {
+      await refresh(token);
+      showToast(synced + " avaliacao(oes) offline sincronizada(s).");
+    }
+  };
+
   const startEvaluation = async (payload) => {
     if (!activeCampaign) {
       showToast("Nenhuma campanha ativa foi encontrada. O administrador precisa cadastrar uma campanha com data de inicio e fim para liberar as avaliacoes.", "error");
@@ -632,6 +924,11 @@ function App() {
       showToast("Atendimento iniciado. O aluno agora aparece como em avaliacao para os demais nutricionistas.");
       return savedEvaluation;
     } catch (error) {
+      if (getNetworkErrorMessage(error)) {
+        const offlineEvaluation = queueOfflineEvaluation(payload);
+        showToast("Atendimento iniciado offline. Ele sera sincronizado quando a conexao voltar.");
+        return offlineEvaluation;
+      }
       showToast(error.message || "Falha ao iniciar atendimento.", "error");
       return false;
     }
@@ -648,6 +945,11 @@ function App() {
       showToast("Atendimento liberado.");
       return true;
     } catch (error) {
+      if (getNetworkErrorMessage(error)) {
+        queueOfflineDeleteEvaluation(id);
+        showToast("Atendimento liberado offline. A liberacao sera sincronizada quando a conexao voltar.");
+        return true;
+      }
       showToast(error.message || "Falha ao liberar atendimento.", "error");
       return false;
     }
@@ -691,16 +993,28 @@ function App() {
     }
   };
 
+  useEffect(() => {
+    if (!authToken) return undefined;
+    const handleOnline = () => syncOfflineQueue(authToken);
+    window.addEventListener("online", handleOnline);
+    if (navigator.onLine) syncOfflineQueue(authToken);
+    return () => window.removeEventListener("online", handleOnline);
+  }, [authToken, offlineQueue.length]);
+
   if (!authReady) return <AuthLoading message={authToken ? "Validando sessao..." : "Preparando acesso..."} />;
   if (!currentUser) {
     return (
       <Login
         onLogin={authenticate}
         onAcceptConsent={acceptLocationConsent}
+        onAcceptInstall={acceptInstallConsent}
         onRejectOptional={rejectOptionalCookies}
         consentState={consentState}
         error={loginError}
         isSubmitting={isAuthenticating}
+        installReady={appInstallReady}
+        installPromptAvailable={!!installPromptEvent || isAppInstalled()}
+        isInstallingApp={isInstallingApp}
       />
     );
   }
@@ -710,7 +1024,8 @@ function App() {
       <Shell route={route} go={go} onLogout={logout}>
         {toast && <div className={`toast ${toast.type}`}>{toast.text}</div>}
         {isBootstrapping && <div className="alert">Carregando dados do sistema...</div>}
-        {apiUnavailable && <div className="alert error">API local indisponivel. Verifique se o backend do sistema esta ativo.</div>}
+        {apiUnavailable && <div className="alert error">Sem conexao com o servidor. O sistema pode continuar usando os dados deste dispositivo e sincronizara quando voltar.</div>}
+        {offlineQueue.length > 0 && <div className="alert warn">{offlineQueue.length} acao(oes) offline aguardando sincronizacao.</div>}
         <Page route={route} go={go} />
       </Shell>
     </DataContext.Provider>
@@ -743,14 +1058,14 @@ function AuthLoading({ message }) {
   );
 }
 
-function Login({ onLogin, onAcceptConsent, onRejectOptional, consentState, error, isSubmitting }) {
+function Login({ onLogin, onAcceptConsent, onAcceptInstall, onRejectOptional, consentState, error, isSubmitting, installReady, installPromptAvailable, isInstallingApp }) {
   const submit = async (event) => {
     event.preventDefault();
     const values = readForm(event.currentTarget);
     await onLogin({ login: values.login, password: values.password });
   };
 
-  const loginEnabled = consentState.locationAccepted && !!consentState.location;
+  const loginEnabled = consentState.locationAccepted && !!consentState.location && installReady;
 
   return (
     <main className="login-screen">
@@ -767,7 +1082,7 @@ function Login({ onLogin, onAcceptConsent, onRejectOptional, consentState, error
             <input name="password" type="password" placeholder="Digite sua senha" autoComplete="current-password" required />
             <Lock size={18} />
           </label>
-          <ConsentStatus consentState={consentState} />
+          <ConsentStatus consentState={consentState} installReady={installReady} />
           {error && <div className="alert error login-alert">{error}</div>}
           <div className="login-row">
             <label className="checkline"><input type="checkbox" /> <span>Lembrar de mim</span></label>
@@ -776,21 +1091,26 @@ function Login({ onLogin, onAcceptConsent, onRejectOptional, consentState, error
           <button type="button" className="forgot">Esqueceu sua senha?</button>
         </form>
       </section>
-      {!consentState.locationAccepted && <CookieBar consentState={consentState} onAccept={onAcceptConsent} onRejectOptional={onRejectOptional} />}
+      {(!consentState.locationAccepted || !installReady) && <CookieBar consentState={consentState} installReady={installReady} installPromptAvailable={installPromptAvailable} isInstallingApp={isInstallingApp} onAccept={onAcceptConsent} onAcceptInstall={onAcceptInstall} onRejectOptional={onRejectOptional} />}
     </main>
   );
 }
 
-function ConsentStatus({ consentState }) {
-  if (consentState.locationAccepted && consentState.location) {
-    return <div className="alert success login-alert">Localizacao validada. O login esta liberado para este dispositivo.</div>;
+function ConsentStatus({ consentState, installReady }) {
+  const locationReady = consentState.locationAccepted && !!consentState.location;
+  if (locationReady && installReady) {
+    return <div className="alert success login-alert">Localizacao validada e aplicativo instalado. O login esta liberado para este dispositivo.</div>;
   }
 
   if (consentState.dismissedOptional) {
-    return <div className="alert error login-alert">Cookies opcionais foram recusados. Aceite a coleta de localizacao para liberar o acesso.</div>;
+    return <div className="alert error login-alert">Cookies opcionais foram recusados. Aceite a localizacao e instale o aplicativo para liberar o acesso.</div>;
   }
 
-  return <div className="alert consent-alert login-alert">Aceite a coleta de localizacao real para habilitar o login.</div>;
+  if (locationReady) {
+    return <div className="alert consent-alert login-alert">Localizacao validada. Instale o aplicativo para habilitar o login.</div>;
+  }
+
+  return <div className="alert consent-alert login-alert">Aceite a coleta de localizacao real e instale o aplicativo para habilitar o login.</div>;
 }
 
 function Shell({ route, go, onLogout, children }) {
@@ -3498,22 +3818,25 @@ function EditorMock({ defaultValue }) {
   return <div className="editor wide"><div>{tools.map((Icon, index) => <button key={index} title="Editor" type="button"><Icon size={15} /></button>)}</div><textarea name="bannerHtml" defaultValue={defaultValue || "<p>Bem-vindo ao NUTRATIVA.</p>"} /></div>;
 }
 
-function CookieBar({ consentState, onAccept, onRejectOptional }) {
+function CookieBar({ consentState, installReady, installPromptAvailable, isInstallingApp, onAccept, onAcceptInstall, onRejectOptional }) {
   const [showDetails, setShowDetails] = useState(false);
 
   return (
     <aside className="cookie">
-      <b>Cookies no sistema</b>
-      <p>Usamos cookies essenciais para login e seguranca. Para liberar o acesso, precisamos da sua autorizacao para coletar a localizacao real deste login.</p>
+      <b>Seguranca do dispositivo</b>
+      <p>Usamos cookies essenciais para login, seguranca e funcionamento offline. Para liberar o acesso, autorize a localizacao real e instale o aplicativo neste dispositivo.</p>
       {showDetails && (
         <div className="cookie-details">
           <p>A localizacao e coletada somente no momento do login para registrar a origem do acesso. Sem essa coleta, o sistema nao libera a autenticacao.</p>
-          <p>Se voce recusar apenas os cookies opcionais, o login continua bloqueado ate clicar em <b>Aceitar</b> e permitir a geolocalizacao do navegador.</p>
+          <p>A instalacao cria um aplicativo no dispositivo e permite carregar a tela mesmo se a conexao cair. Sem instalar, o login continua bloqueado.</p>
+          <p>Se voce recusar apenas os cookies opcionais, o login continua bloqueado ate aceitar a localizacao e autorizar a instalacao.</p>
           {consentState.locationAccepted && consentState.location && (
             <small>
               Localizacao validada: latitude {consentState.location.latitude.toFixed(5)}, longitude {consentState.location.longitude.toFixed(5)}.
             </small>
           )}
+          {installReady && <small>Aplicativo instalado/autorizado neste dispositivo.</small>}
+          {!installReady && !installPromptAvailable && <small>Se o prompt automatico nao aparecer, clique em Autorizar instalacao e confirme apos instalar pelo menu do navegador.</small>}
         </div>
       )}
       <button className="btn info" type="button" onClick={() => setShowDetails((value) => !value)}>
@@ -3521,12 +3844,16 @@ function CookieBar({ consentState, onAccept, onRejectOptional }) {
       </button>
       <button className="btn outline" type="button" onClick={onRejectOptional}>Recusar opcionais</button>
       <button className="btn success" type="button" onClick={onAccept}>
-        {consentState.locationAccepted ? "Atualizar localizacao" : "Aceitar"}
+        {consentState.locationAccepted ? "Atualizar localizacao" : "Aceitar localizacao"}
       </button>
+      {!installReady && (
+        <button className="btn primary" type="button" onClick={onAcceptInstall} disabled={isInstallingApp}>
+          {isInstallingApp ? "Instalando..." : installPromptAvailable ? "Instalar aplicativo" : "Autorizar instalacao"}
+        </button>
+      )}
     </aside>
   );
 }
-
 function buildStudentCsvTemplate(schools) {
   const header = "nome;cpf;data_nascimento;sexo;telefone;email;responsavel;escola_id;matricula;tipo_ensino;serie;turma;turno";
   const example = buildStudentCsvExample(schools, ";");

@@ -1,0 +1,8 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="NUTRATIVA">
+  <rect width="512" height="512" rx="118" fill="#f5f1e6"/>
+  <circle cx="360" cy="128" r="58" fill="#f6d889" opacity="0.9"/>
+  <path d="M174 116c-45 0-82 37-82 82v126c0 55 45 100 100 100h128c55 0 100-45 100-100V198c0-45-37-82-82-82H174z" fill="#e85f42"/>
+  <path d="M256 120c-64 0-116 52-116 116 0 79 83 91 83 154h66c0-63 83-75 83-154 0-64-52-116-116-116z" fill="#fff7df"/>
+  <path d="M222 390h68v28c0 19-15 34-34 34s-34-15-34-34v-28z" fill="#5f9e53"/>
+  <path d="M206 238c19-37 57-54 103-50-11 52-46 85-98 96-2-16-4-31-5-46z" fill="#6cab5a"/>
+</svg>

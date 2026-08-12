@@ -1,0 +1,31 @@
+﻿{
+  "name": "NUTRATIVA",
+  "short_name": "NUTRATIVA",
+  "description": "Central local de avaliações nutricionais com suporte inicial offline.",
+  "start_url": "/#/login",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5f1e6",
+  "theme_color": "#5f9e53",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

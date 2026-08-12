@@ -5,6 +5,7 @@ const { createDataStore } = require("./db");
 
 const app = express();
 const port = Number(process.env.API_PORT || 3001);
+const host = process.env.API_HOST || "0.0.0.0";
 const cfnBaseUrl = "https://cfn.org.br";
 const cfnNewsApiUrl = `${cfnBaseUrl}/wp-json/wp/v2/posts?per_page=4&_fields=link,date,title,excerpt`;
 const newsCacheTtlMs = 15 * 60 * 1000;
@@ -406,6 +407,10 @@ app.post("/api/auth/login", async (req, res) => {
     return res.status(403).json({ error: "A coleta de localizacao precisa ser aceita para liberar o login." });
   }
 
+  if (!consent.installAccepted) {
+    return res.status(403).json({ error: "A instalacao do aplicativo precisa ser autorizada para liberar o login." });
+  }
+
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
     return res.status(403).json({ error: "Localizacao invalida ou nao informada." });
   }
@@ -422,6 +427,7 @@ app.post("/api/auth/login", async (req, res) => {
     consent: {
       optionalCookiesAccepted: !!consent.optionalCookiesAccepted,
       locationAccepted: true,
+      installAccepted: true,
     },
   });
 
@@ -518,8 +524,9 @@ app.put("/api/users/:id/password", async (req, res) => {
 
 async function start() {
   await dataStore.init();
-  app.listen(port, () => {
-    console.log(`NUTRATIVA local API running at http://127.0.0.1:${port}`);
+  app.listen(port, host, () => {
+    console.log(`NUTRATIVA local API running at http://${host}:${port}`);
+    console.log(`Local access: http://127.0.0.1:${port}`);
     console.log(`Database client: ${dataStore.config.client === "sqlite" ? "sqlite" : "mysql2"}`);
   });
 }
