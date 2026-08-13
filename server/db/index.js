@@ -65,9 +65,16 @@ function createKnexConfig(config) {
   };
 }
 
+function resolveDatabaseClient(options = {}) {
+  const explicitClient = options.client || process.env.DB_CLIENT;
+  if (explicitClient) return String(explicitClient).toLowerCase();
+  if (options.databaseUrl || process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.SUPABASE_DB_URL) return "postgres";
+  return "sqlite";
+}
+
 function createDataStore(options = {}) {
   const config = {
-    client: process.env.DB_CLIENT || "sqlite",
+    client: resolveDatabaseClient(options),
     sqliteFile: options.sqliteFile || process.env.SQLITE_FILE || path.join(__dirname, "..", "data", "app.sqlite"),
     legacyJsonFile: options.legacyJsonFile || path.join(__dirname, "..", "data", "store.json"),
     legacyBackupFile: options.legacyBackupFile || path.join(__dirname, "..", "data", "store.pre-sqlite-backup.json"),
@@ -85,6 +92,10 @@ function createDataStore(options = {}) {
     postgresDatabase: process.env.POSTGRES_DATABASE || process.env.PGDATABASE || "postgres",
     postgresSsl: String(process.env.POSTGRES_SSL || process.env.PGSSLMODE || "require").toLowerCase() !== "false",
   };
+
+  if (["pg", "postgres", "postgresql"].includes(config.client) && !config.databaseUrl && !config.postgresPassword) {
+    throw new Error("DATABASE_URL ou credenciais PostgreSQL precisam estar configuradas para usar Supabase/Postgres.");
+  }
 
   const knex = knexFactory(createKnexConfig(config));
 
