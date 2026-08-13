@@ -15,7 +15,8 @@
     "build:bmi-reference": "node scripts/build-bmi-reference.js",
     "web:local": "vite --host 127.0.0.1",
     "public": "cloudflared tunnel --url http://127.0.0.1:5180",
-    "start:public": "powershell -ExecutionPolicy Bypass -File scripts/start-public.ps1"
+    "start:public": "powershell -ExecutionPolicy Bypass -File scripts/start-public.ps1",
+    "db:check": "node scripts/check-db.js"
   },
   "keywords": [],
   "author": "",
@@ -31,6 +32,7 @@
     "leaflet": "^1.9.4",
     "lucide-react": "^1.14.0",
     "mysql2": "^3.22.5",
+    "pg": "^8.23.0",
     "playwright": "^1.59.1",
     "react": "^19.2.6",
     "react-chartjs-2": "^5.3.1",

@@ -3566,18 +3566,18 @@ function PediatricGrowthCharts({ anthropometryResult }) {
     maintainAspectRatio: false,
     interaction: { mode: "nearest", intersect: false },
     animation: false,
-    layout: { padding: isPrintMode ? { top: 4, right: 8, bottom: 2, left: 4 } : { top: 4, right: 8, bottom: 0, left: 4 } },
+    layout: { padding: isPrintMode ? { top: 4, right: 8, bottom: 10, left: 4 } : { top: 4, right: 8, bottom: 0, left: 4 } },
     plugins: {
       legend: {
         position: "bottom",
         align: "start",
         labels: {
-          boxWidth: isPrintMode ? 10 : 12,
-          boxHeight: 3,
+          boxWidth: isPrintMode ? 8 : 12,
+          boxHeight: isPrintMode ? 2 : 3,
           usePointStyle: false,
           color: "#476347",
-          padding: isPrintMode ? 8 : 10,
-          font: { size: isPrintMode ? 9 : 10 },
+          padding: isPrintMode ? 5 : 10,
+          font: { size: isPrintMode ? 8 : 10 },
           filter(item) {
             return item.text !== "Avaliacao atual";
           },
@@ -3596,13 +3596,13 @@ function PediatricGrowthCharts({ anthropometryResult }) {
     scales: {
       x: {
         type: "linear",
-        title: { display: true, text: "Idade (anos)", color: "#476347", font: { size: isPrintMode ? 9 : 12 } },
-        ticks: { color: "#6f8268", maxTicksLimit: isPrintMode ? 6 : 8, font: { size: isPrintMode ? 9 : 11 } },
+        title: { display: true, text: "Idade (anos)", color: "#476347", font: { size: isPrintMode ? 8 : 12 } },
+        ticks: { color: "#6f8268", maxTicksLimit: isPrintMode ? 6 : 8, font: { size: isPrintMode ? 8 : 11 } },
         grid: { color: "rgba(111,143,98,.08)" },
       },
       y: {
-        title: { display: true, text: "IMC", color: "#476347", font: { size: isPrintMode ? 9 : 12 } },
-        ticks: { color: "#6f8268", maxTicksLimit: isPrintMode ? 6 : 7, font: { size: isPrintMode ? 9 : 11 } },
+        title: { display: true, text: "IMC", color: "#476347", font: { size: isPrintMode ? 8 : 12 } },
+        ticks: { color: "#6f8268", maxTicksLimit: isPrintMode ? 6 : 7, font: { size: isPrintMode ? 8 : 11 } },
         grid: { color: "rgba(111,143,98,.08)" },
       },
     },

@@ -11,6 +11,7 @@ const cfnNewsApiUrl = `${cfnBaseUrl}/wp-json/wp/v2/posts?per_page=4&_fields=link
 const newsCacheTtlMs = 15 * 60 * 1000;
 const authSessions = new Map();
 const dataStore = createDataStore();
+const dataStoreReady = dataStore.init();
 let latestNewsCache = { items: [], fetchedAt: 0 };
 const authUser = {
   id: "admin-local",
@@ -22,6 +23,15 @@ const authUser = {
 
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
+app.use(async (_req, res, next) => {
+  try {
+    await dataStoreReady;
+    next();
+  } catch (error) {
+    console.error("Falha ao preparar a base de dados:", error);
+    res.status(500).json({ error: "Falha ao preparar a base de dados." });
+  }
+});
 
 function nextSchoolCode(rows = []) {
   return rows.reduce((maxCode, school) => Math.max(maxCode, Number(school.schoolCode) || 0), 0) + 1;
@@ -523,15 +533,21 @@ app.put("/api/users/:id/password", async (req, res) => {
 ["schools", "students", "users", "years", "campaigns", "nutritionists", "evaluations"].forEach(collectionRoute);
 
 async function start() {
-  await dataStore.init();
+  await dataStoreReady;
   app.listen(port, host, () => {
     console.log(`NUTRATIVA local API running at http://${host}:${port}`);
     console.log(`Local access: http://127.0.0.1:${port}`);
-    console.log(`Database client: ${dataStore.config.client === "sqlite" ? "sqlite" : "mysql2"}`);
+    console.log(`Database client: ${dataStore.config.client}`);
   });
 }
 
-start().catch((error) => {
-  console.error("Falha ao iniciar a API local:", error);
-  process.exit(1);
-});
+if (require.main === module) {
+  start().catch((error) => {
+    console.error("Falha ao iniciar a API local:", error);
+    process.exit(1);
+  });
+}
+
+module.exports = app;
+module.exports.start = start;
+module.exports.dataStoreReady = dataStoreReady;

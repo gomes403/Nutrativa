@@ -34,6 +34,27 @@ function createKnexConfig(config) {
     };
   }
 
+  if (["pg", "postgres", "postgresql"].includes(config.client)) {
+    const ssl = config.postgresSsl ? { rejectUnauthorized: false } : false;
+    const connection = config.databaseUrl
+      ? { connectionString: config.databaseUrl, ...(ssl ? { ssl } : {}) }
+      : {
+          host: config.postgresHost,
+          port: config.postgresPort,
+          user: config.postgresUser,
+          password: config.postgresPassword,
+          database: config.postgresDatabase,
+          ...(ssl ? { ssl } : {}),
+        };
+
+    return {
+      client: "pg",
+      connection,
+      pool: { min: 0, max: Number(process.env.DB_POOL_MAX || 3) },
+      acquireConnectionTimeout: Number(process.env.DB_TIMEOUT_MS || 15000),
+    };
+  }
+
   ensureParentDir(config.sqliteFile);
   return {
     client: "sqlite3",
@@ -56,6 +77,13 @@ function createDataStore(options = {}) {
     mysqlUser: process.env.MYSQL_USER || "root",
     mysqlPassword: process.env.MYSQL_PASSWORD || "",
     mysqlDatabase: process.env.MYSQL_DATABASE || "abdesm",
+    databaseUrl: options.databaseUrl || process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.SUPABASE_DB_URL || "",
+    postgresHost: process.env.POSTGRES_HOST || process.env.PGHOST || "127.0.0.1",
+    postgresPort: Number(process.env.POSTGRES_PORT || process.env.PGPORT || 5432),
+    postgresUser: process.env.POSTGRES_USER || process.env.PGUSER || "postgres",
+    postgresPassword: process.env.POSTGRES_PASSWORD || process.env.PGPASSWORD || "",
+    postgresDatabase: process.env.POSTGRES_DATABASE || process.env.PGDATABASE || "postgres",
+    postgresSsl: String(process.env.POSTGRES_SSL || process.env.PGSSLMODE || "require").toLowerCase() !== "false",
   };
 
   const knex = knexFactory(createKnexConfig(config));
@@ -183,14 +211,14 @@ function createDataStore(options = {}) {
       await setMeta("lastImportAt", new Date().toISOString(), transaction);
     });
 
-    await syncLegacyJsonSnapshot();
+    if (config.client === "sqlite") await syncLegacyJsonSnapshot();
   }
 
   async function ensureSeedData() {
     const row = await knex("records").count({ total: "*" }).first();
     const totalRecords = Number(row?.total || 0);
     if (totalRecords > 0) {
-      await syncLegacyJsonSnapshot();
+      if (config.client === "sqlite") await syncLegacyJsonSnapshot();
       return;
     }
 
@@ -223,7 +251,7 @@ function createDataStore(options = {}) {
     },
     async clearCollection(collectionName) {
       await knex("records").where({ collection_name: collectionName }).del();
-      await syncLegacyJsonSnapshot();
+      if (config.client === "sqlite") await syncLegacyJsonSnapshot();
     },
     async getCollectionItem(collectionName, id) {
       return getCollectionItem(collectionName, id);
@@ -239,7 +267,7 @@ function createDataStore(options = {}) {
         created_at: item.createdAt || timestamp,
         updated_at: timestamp,
       });
-      await syncLegacyJsonSnapshot();
+      if (config.client === "sqlite") await syncLegacyJsonSnapshot();
       return item;
     },
     async updateCollectionItem(collectionName, id, item) {
@@ -256,7 +284,7 @@ function createDataStore(options = {}) {
           updated_at: item.updatedAt || new Date().toISOString(),
         });
 
-      await syncLegacyJsonSnapshot();
+      if (config.client === "sqlite") await syncLegacyJsonSnapshot();
       return item;
     },
     async deleteCollectionItem(collectionName, id) {
@@ -266,7 +294,7 @@ function createDataStore(options = {}) {
 
       if (!affectedRows) return false;
 
-      await syncLegacyJsonSnapshot();
+      if (config.client === "sqlite") await syncLegacyJsonSnapshot();
       return true;
     },
     async updateSettings(patch) {
@@ -292,7 +320,7 @@ function createDataStore(options = {}) {
         });
       }
 
-      await syncLegacyJsonSnapshot();
+      if (config.client === "sqlite") await syncLegacyJsonSnapshot();
       return nextSettings;
     },
     async reset() {
