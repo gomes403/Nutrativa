@@ -10,9 +10,22 @@ const cfnBaseUrl = "https://cfn.org.br";
 const cfnNewsApiUrl = `${cfnBaseUrl}/wp-json/wp/v2/posts?per_page=4&_fields=link,date,title,excerpt`;
 const newsCacheTtlMs = 15 * 60 * 1000;
 const authSessions = new Map();
-const dataStore = createDataStore();
-const dataStoreReady = dataStore.init();
+let dataStore = null;
+let dataStoreReady = null;
 let latestNewsCache = { items: [], fetchedAt: 0 };
+
+function getDataStore() {
+  if (!dataStore) {
+    dataStore = createDataStore();
+    dataStoreReady = dataStore.init();
+  }
+  return dataStore;
+}
+
+function ensureDataStoreReady() {
+  getDataStore();
+  return dataStoreReady;
+}
 const authUser = {
   id: "admin-local",
   login: process.env.AUTH_LOGIN || "admin",
@@ -25,11 +38,11 @@ app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 app.use(async (_req, res, next) => {
   try {
-    await dataStoreReady;
+    await ensureDataStoreReady();
     next();
   } catch (error) {
     console.error("Falha ao preparar a base de dados:", error);
-    res.status(500).json({ error: "Falha ao preparar a base de dados." });
+    res.status(500).json({ error: error.message || "Falha ao preparar a base de dados." });
   }
 });
 
@@ -533,11 +546,11 @@ app.put("/api/users/:id/password", async (req, res) => {
 ["schools", "students", "users", "years", "campaigns", "nutritionists", "evaluations"].forEach(collectionRoute);
 
 async function start() {
-  await dataStoreReady;
+  await ensureDataStoreReady();
   app.listen(port, host, () => {
     console.log(`NUTRATIVA local API running at http://${host}:${port}`);
     console.log(`Local access: http://127.0.0.1:${port}`);
-    console.log(`Database client: ${dataStore.config.client}`);
+    console.log(`Database client: ${getDataStore().config.client}`);
   });
 }
 
@@ -550,4 +563,4 @@ if (require.main === module) {
 
 module.exports = app;
 module.exports.start = start;
-module.exports.dataStoreReady = dataStoreReady;
+module.exports.ensureDataStoreReady = ensureDataStoreReady;
