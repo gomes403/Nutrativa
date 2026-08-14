@@ -245,7 +245,7 @@ const studentCsvAliases = {
   schoolId: ["escola id", "schoolid", "school id", "id escola", "escola_id", "school_id"],
   registration: ["matricula", "registro", "registration"],
   shift: ["turno", "shift"],
-  educationType: ["tipo de ensino", "ensino", "educationtype", "education type", "tipo_ensino"],
+  educationType: ["tipo de ensino", "ensino", "modalidade", "modalidade de ensino", "educationtype", "education type", "tipo_ensino"],
   grade: ["serie", "série", "ano", "grade"],
   classroom: ["turma", "class", "sala"],
 };
@@ -891,6 +891,25 @@ function App() {
     }
   };
 
+  const clearStudentsBySchool = async (schoolId) => {
+    if (!schoolId) {
+      showToast("Selecione uma escola para limpar os alunos dela.", "error");
+      return false;
+    }
+
+    try {
+      const response = await apiFetch(`/api/students?schoolId=${encodeURIComponent(schoolId)}`, { method: "DELETE" });
+      if (response.status === 401) return false;
+      if (!response.ok) throw new Error(await readError(response, "Nao foi possivel limpar os alunos desta escola."));
+      await refresh();
+      showToast("Alunos da escola selecionada removidos com sucesso.");
+      return true;
+    } catch (error) {
+      showToast(error.message || "Falha ao limpar alunos da escola.", "error");
+      return false;
+    }
+  };
+
   const importRecords = async (collection, payloads, options = {}) => {
     const onProgress = typeof options.onProgress === "function" ? options.onProgress : null;
     if (!payloads.length) {
@@ -1125,7 +1144,7 @@ function App() {
   }
 
   return (
-    <DataContext.Provider value={{ currentUser, data, activeCampaign, refresh, saveRecord, deleteRecord, clearCollection, importRecords, startEvaluation, releaseEvaluation, saveSettings, changeOwnPassword, resetUserPassword, showToast, logout }}>
+    <DataContext.Provider value={{ currentUser, data, activeCampaign, refresh, saveRecord, deleteRecord, clearCollection, clearStudentsBySchool, importRecords, startEvaluation, releaseEvaluation, saveSettings, changeOwnPassword, resetUserPassword, showToast, logout }}>
       <Shell route={route} go={go} onLogout={logout}>
         {toast && <div className={`toast ${toast.type}`}>{toast.text}</div>}
         {isBootstrapping && <div className="alert">Carregando dados do sistema...</div>}
@@ -2503,9 +2522,10 @@ function SchoolDetail({ id, go }) {
 }
 
 function Students({ go }) {
-  const { data, deleteRecord, clearCollection, importRecords, showToast } = useAppData();
+  const { data, deleteRecord, clearCollection, clearStudentsBySchool, importRecords, showToast } = useAppData();
   const importInputRef = useRef(null);
   const [showClearWarning, setShowClearWarning] = useState(false);
+  const [clearScope, setClearScope] = useState("all");
   const [importStatus, setImportStatus] = useState(null);
   const schoolName = (id) => findById(data.schools, id)?.name || "";
   const csvColumnOrder = "nome, cpf, data_nascimento, sexo, telefone, email, responsavel, escola_id, matricula, tipo_ensino, serie, turma, turno";
@@ -2551,8 +2571,9 @@ function Students({ go }) {
 
   const clearFilters = () => {
     const emptyFilters = { search: "", schoolId: "", grade: "", classroom: "", shift: "" };
-    setDraftFilters(emptyFilters);
-    setAppliedFilters(emptyFilters);
+    setDraftFilters({ ...emptyFilters });
+    setAppliedFilters({ ...emptyFilters });
+    showToast("Filtros limpos.");
   };
 
   const openImportDialog = () => {
@@ -2606,26 +2627,42 @@ function Students({ go }) {
 
       const payloads = [];
       const errors = [];
+      let skippedDuplicates = 0;
+      const existingKeys = new Set(data.students.flatMap(studentDuplicateKeys));
+      const importedKeys = new Set();
 
       rows.forEach((row, index) => {
         const rowNumber = index + 2;
         try {
-          payloads.push(normalizeStudentCsvRow(row, data.schools));
+          const payload = normalizeStudentCsvRow(row, data.schools);
+          const keys = studentDuplicateKeys(payload);
+          const isDuplicate = keys.some((key) => existingKeys.has(key) || importedKeys.has(key));
+
+          if (isDuplicate) {
+            skippedDuplicates += 1;
+            return;
+          }
+
+          keys.forEach((key) => importedKeys.add(key));
+          payloads.push(payload);
         } catch (error) {
           errors.push(`Linha ${rowNumber}: ${error.message}`);
         }
       });
 
       if (!payloads.length) {
-        showToast(errors.length ? `Nenhum registro valido foi encontrado. ${errors[0]}` : "Nenhum registro valido foi encontrado no arquivo.", "error");
+        const duplicateMessage = skippedDuplicates ? `${skippedDuplicates} aluno(s) duplicado(s) ignorado(s).` : "";
+        showToast(errors.length ? `Nenhum registro novo foi encontrado. ${duplicateMessage} ${errors[0]}`.trim() : duplicateMessage || "Nenhum registro valido foi encontrado no arquivo.", "error");
         setImportStatus(null);
         return;
       }
 
-      if (errors.length) {
-        showToast(`${payloads.length} aluno(s) valido(s). ${errors.slice(0, 2).join(" | ")}`, "error");
+      if (errors.length || skippedDuplicates) {
+        const notices = [];
+        if (skippedDuplicates) notices.push(`${skippedDuplicates} duplicado(s) ignorado(s)`);
+        if (errors.length) notices.push(errors.slice(0, 2).join(" | "));
+        showToast(`${payloads.length} aluno(s) novo(s) valido(s). ${notices.join(" | ")}`, errors.length ? "error" : "success");
       }
-
       setImportStatus((current) => ({ ...(current || {}), active: true, stage: "Enviando alunos", total: payloads.length, processed: 0, imported: 0, failed: 0, percent: 0 }));
       await waitForNextPaint();
       await importRecords("students", payloads, {
@@ -2655,16 +2692,33 @@ function Students({ go }) {
     }
   };
 
+  const selectedSchoolForClear = findById(data.schools, draftFilters.schoolId || appliedFilters.schoolId);
+  const selectedSchoolStudentCount = selectedSchoolForClear ? data.students.filter((student) => String(student.schoolId) === String(selectedSchoolForClear.id)).length : 0;
+  const clearTargetCount = clearScope === "school" ? selectedSchoolStudentCount : data.students.length;
+
   const clearStudents = async () => {
     if (!data.students.length) {
       showToast("Nao ha alunos cadastrados para remover.", "error");
       return;
     }
+    setClearScope((draftFilters.schoolId || appliedFilters.schoolId) ? "school" : "all");
     setShowClearWarning(true);
   };
 
   const confirmClearStudents = async () => {
-    await clearCollection("students");
+    if (clearScope === "school") {
+      if (!selectedSchoolForClear) {
+        showToast("Selecione uma escola para limpar os alunos dela.", "error");
+        return;
+      }
+      if (!selectedSchoolStudentCount) {
+        showToast("Nao ha alunos cadastrados nesta escola.", "error");
+        return;
+      }
+      await clearStudentsBySchool(selectedSchoolForClear.id);
+    } else {
+      await clearCollection("students");
+    }
     setShowClearWarning(false);
   };
 
@@ -2681,11 +2735,19 @@ function Students({ go }) {
         <div className="danger-box">
           <div>
             <strong>Atencao ao limpar dados</strong>
-            <p>Esta acao apagará permanentemente todos os {data.students.length} aluno(s) cadastrados na base local.</p>
+            <p>Escolha se deseja apagar todos os alunos ou apenas os alunos da escola selecionada.</p>
+            <label className="field">
+              <span>Escopo da exclusao</span>
+              <select value={clearScope} onChange={(event) => setClearScope(event.target.value)}>
+                <option value="all">Todos os alunos cadastrados ({data.students.length})</option>
+                <option value="school" disabled={!selectedSchoolForClear}>Apenas escola selecionada{selectedSchoolForClear ? ": " + selectedSchoolForClear.name + " (" + selectedSchoolStudentCount + ")" : ""}</option>
+              </select>
+            </label>
+            <p>Esta acao apagara permanentemente {clearTargetCount} aluno(s).</p>
           </div>
           <div className="danger-box-actions">
             <button className="btn outline muted-btn" type="button" onClick={() => setShowClearWarning(false)}>Cancelar</button>
-            <button className="btn danger" type="button" onClick={confirmClearStudents}><Trash2 size={17} /> Confirmar exclusao</button>
+            <button className="btn danger" type="button" onClick={confirmClearStudents} disabled={!clearTargetCount}><Trash2 size={17} /> Confirmar exclusao</button>
           </div>
         </div>
       )}
@@ -4270,6 +4332,29 @@ function normalizeCsvKey(value) {
     .trim();
 }
 
+function onlyDigits(value) {
+  return String(value || "").replace(/\D+/g, "");
+}
+
+function studentDuplicateKeys(student = {}) {
+  const keys = [];
+  const cpf = onlyDigits(student.cpf);
+  const schoolId = String(student.schoolId || student.escola_id || "").trim();
+  const registration = normalizeCsvKey(student.registration || student.matricula);
+  const name = normalizeCsvKey(student.name || student.nome);
+  const birthDate = String(student.birthDate || student.data_nascimento || "").trim();
+  const grade = normalizeCsvKey(student.grade || student.serie);
+  const classroom = normalizeCsvKey(student.classroom || student.turma);
+  const shift = normalizeCsvKey(student.shift || student.turno);
+
+  if (cpf) keys.push("cpf:" + cpf);
+  if (schoolId && registration) keys.push("school-registration:" + schoolId + ":" + registration);
+  if (schoolId && name && birthDate) keys.push("school-name-birth:" + schoolId + ":" + name + ":" + birthDate);
+  if (schoolId && name && grade && classroom && shift) keys.push("school-name-class:" + schoolId + ":" + name + ":" + grade + ":" + classroom + ":" + shift);
+
+  return keys;
+}
+
 function getCsvValue(row, aliases) {
   const normalizedAliases = aliases.map(normalizeCsvKey);
   for (const [key, value] of Object.entries(row)) {
@@ -4315,10 +4400,10 @@ function normalizeStudentCsvRow(row, schools) {
   if (!schoolId) throw new Error("a escola e obrigatoria e precisa existir no cadastro");
 
   const educationTypeRaw = getCsvValue(row, studentCsvAliases.educationType);
-  const educationType = canonicalEducationType(educationTypeRaw);
+  const gradeRaw = getCsvValue(row, studentCsvAliases.grade);
+  const educationType = canonicalEducationType(educationTypeRaw, gradeRaw, classroomText);
   if (!educationType) throw new Error("tipo de ensino invalido ou nao informado");
 
-  const gradeRaw = getCsvValue(row, studentCsvAliases.grade);
   const grade = canonicalGrade(educationType, gradeRaw);
   if (!grade) throw new Error("serie invalida ou nao informada para o tipo de ensino");
 
@@ -4376,14 +4461,17 @@ function resolveSchoolId({ schoolIdText, schoolText }, schools) {
   return "";
 }
 
-function canonicalEducationType(value) {
+function canonicalEducationType(value, gradeValue = "", classroomValue = "") {
   const normalized = normalizeCsvKey(value);
-  if (!normalized) return "";
+  const gradeHint = normalizeCsvKey(gradeValue);
+  const classroomHint = normalizeCsvKey(classroomValue);
+  const combinedHints = [normalized, gradeHint, classroomHint].filter(Boolean).join(" ");
+
   if (["educacao infantil", "infantil"].includes(normalized)) return "Educacao Infantil";
   if (["ensino fundamental i", "fundamental i", "fundamental 1"].includes(normalized)) return "Ensino Fundamental I";
   if (["ensino fundamental ii", "fundamental ii", "fundamental 2"].includes(normalized)) return "Ensino Fundamental II";
   if (["ensino medio", "medio"].includes(normalized)) return "Ensino Medio";
-  if (normalized === "eja") return "EJA";
+  if (isEjaText(combinedHints) || canonicalEjaGrade(normalizeGradeKey(gradeValue))) return "EJA";
   return "";
 }
 
@@ -4391,7 +4479,43 @@ function canonicalGrade(educationType, value) {
   const options = gradesByEducationType[educationType] || [];
   const normalized = normalizeGradeKey(value);
 
+  if (educationType === "EJA") {
+    const ejaGrade = canonicalEjaGrade(normalized);
+    if (ejaGrade) return ejaGrade;
+  }
+
   return options.find((option) => normalizeGradeKey(option) === normalized) || "";
+}
+
+function canonicalEjaGrade(normalizedValue) {
+  if (!normalizedValue) return "";
+
+  const options = gradesByEducationType.EJA || [];
+  const direct = options.find((option) => normalizeGradeKey(option) === normalizedValue);
+  if (direct) return direct;
+
+  const cleaned = normalizedValue.replace(/^eja\s+/, "").replace(/^mod\s+/, "modulo ").replace(/^modulo\s+0+/, "modulo ");
+  const moduleNumberMatch = cleaned.match(/^(?:modulo|fase|etapa)\s*(\d+)$/);
+  const standaloneNumberMatch = cleaned.match(/^(\d+)$/);
+  const romanMatch = cleaned.match(/^(?:modulo|fase|etapa)?\s*([ivx]+)$/);
+  const moduleNumber = moduleNumberMatch?.[1] || standaloneNumberMatch?.[1] || romanToNumber(romanMatch?.[1]);
+
+  if (!moduleNumber) return "";
+  return options[Number(moduleNumber) - 1] || "";
+}
+
+function isEjaText(value) {
+  const normalized = normalizeCsvKey(value);
+  if (!normalized) return false;
+  return /(^|\s)eja(\s|$)/.test(normalized)
+    || normalized.includes("educacao de jovens e adultos")
+    || normalized.includes("jovens e adultos");
+}
+
+function romanToNumber(value) {
+  const normalized = String(value || "").toLowerCase();
+  const values = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7, viii: 8, ix: 9, x: 10 };
+  return values[normalized] || 0;
 }
 
 function normalizeGradeKey(value) {
@@ -4403,13 +4527,13 @@ function normalizeGradeKey(value) {
 
 function canonicalShift(value) {
   const normalized = normalizeCsvKey(value);
-  if (["manha", "manhã"].includes(normalized)) return "Manha";
-  if (["tarde"].includes(normalized)) return "Tarde";
-  if (["noite"].includes(normalized)) return "Noite";
-  if (["integral"].includes(normalized)) return "Integral";
+  if (!normalized) return "";
+  if (normalized.startsWith("manh") || ["matutino", "manha"].includes(normalized)) return "Manha";
+  if (normalized.startsWith("tard") || ["vespertino"].includes(normalized)) return "Tarde";
+  if (normalized.startsWith("noit") || ["noturno"].includes(normalized)) return "Noite";
+  if (normalized.startsWith("integral") || ["tempo integral", "integrado"].includes(normalized)) return "Integral";
   return "";
 }
-
 function canonicalSex(value) {
   const normalized = normalizeCsvKey(value);
   if (["masculino", "m"].includes(normalized)) return "Masculino";

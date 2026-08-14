@@ -126,6 +126,48 @@ function normalizeLogin(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+function normalizeRecordKey(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function onlyDigits(value) {
+  return String(value || "").replace(/\D+/g, "");
+}
+
+function studentDuplicateKeys(student = {}) {
+  const keys = [];
+  const cpf = onlyDigits(student.cpf);
+  const schoolId = String(student.schoolId || student.escola_id || "").trim();
+  const registration = normalizeRecordKey(student.registration || student.matricula);
+  const name = normalizeRecordKey(student.name || student.nome);
+  const birthDate = String(student.birthDate || student.data_nascimento || "").trim();
+  const grade = normalizeRecordKey(student.grade || student.serie);
+  const classroom = normalizeRecordKey(student.classroom || student.turma);
+  const shift = normalizeRecordKey(student.shift || student.turno);
+
+  if (cpf) keys.push("cpf:" + cpf);
+  if (schoolId && registration) keys.push("school-registration:" + schoolId + ":" + registration);
+  if (schoolId && name && birthDate) keys.push("school-name-birth:" + schoolId + ":" + name + ":" + birthDate);
+  if (schoolId && name && grade && classroom && shift) keys.push("school-name-class:" + schoolId + ":" + name + ":" + grade + ":" + classroom + ":" + shift);
+
+  return keys;
+}
+
+function findDuplicateStudent(students = [], candidate = {}, ignoredId = "") {
+  const candidateKeys = new Set(studentDuplicateKeys(candidate));
+  if (!candidateKeys.size) return null;
+
+  return students.find((student) => {
+    if (ignoredId && String(student.id) === String(ignoredId)) return false;
+    return studentDuplicateKeys(student).some((key) => candidateKeys.has(key));
+  }) || null;
+}
+
 function findAuthenticableUser(login, store) {
   const savedUser = (store.users || []).find((user) => {
     const possibleLogins = [user.login, user.email].map(normalizeLogin).filter(Boolean);
@@ -355,7 +397,15 @@ function collectionRoute(name) {
     res.json(sanitizeCollectionPayload(name, rows));
   });
 
-  app.delete(`/api/${name}`, async (_req, res) => {
+  app.delete(`/api/${name}`, async (req, res) => {
+    if (name === "students" && req.query?.schoolId) {
+      const schoolId = String(req.query.schoolId || "").trim();
+      const rows = await dataStore.getCollection(name);
+      const remainingRows = rows.filter((student) => String(student.schoolId || student.escola_id || "") !== schoolId);
+      await dataStore.replaceCollection(name, remainingRows);
+      return res.json({ ok: true, deleted: rows.length - remainingRows.length });
+    }
+
     await dataStore.clearCollection(name);
     res.status(204).end();
   });
@@ -385,6 +435,13 @@ function collectionRoute(name) {
       }
     }
 
+    if (name === "students") {
+      const duplicate = findDuplicateStudent(rows, item);
+      if (duplicate) {
+        return res.status(409).json({ error: "Aluno ja cadastrado com os mesmos dados de identificacao." });
+      }
+    }
+
     if (name === "evaluations") {
       const campaigns = await dataStore.getCollection("campaigns");
       const activeCampaign = findActiveCampaign(campaigns);
@@ -407,6 +464,14 @@ function collectionRoute(name) {
     if (!currentItem) return res.status(404).json({ error: "Registro nao encontrado." });
 
     const item = { ...currentItem, ...req.body, id: currentItem.id };
+
+    if (name === "students") {
+      const rows = await dataStore.getCollection(name);
+      const duplicate = findDuplicateStudent(rows, item, currentItem.id);
+      if (duplicate) {
+        return res.status(409).json({ error: "Aluno ja cadastrado com os mesmos dados de identificacao." });
+      }
+    }
 
     if (name === "campaigns") {
       const rows = await dataStore.getCollection(name);

@@ -283,6 +283,24 @@ function createDataStore(options = {}) {
       await knex("records").where({ collection_name: collectionName }).del();
       if (config.client === "sqlite") await syncLegacyJsonSnapshot();
     },
+    async replaceCollection(collectionName, rows = []) {
+      await knex.transaction(async (trx) => {
+        await trx("records").where({ collection_name: collectionName }).del();
+        for (const [index, item] of rows.entries()) {
+          const timestamp = item.updatedAt || item.createdAt || new Date().toISOString();
+          await trx("records").insert({
+            collection_name: collectionName,
+            record_id: String(item.id),
+            position: index + 1,
+            payload: JSON.stringify(item),
+            created_at: item.createdAt || timestamp,
+            updated_at: timestamp,
+          });
+        }
+      });
+      if (config.client === "sqlite") await syncLegacyJsonSnapshot();
+      return rows;
+    },
     async getCollectionItem(collectionName, id) {
       return getCollectionItem(collectionName, id);
     },
