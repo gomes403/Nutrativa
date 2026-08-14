@@ -77,6 +77,8 @@ const authUserStorageKey = "abdesm-auth-user";
 const consentStorageKey = "abdesm-login-consent";
 const dataCacheStorageKey = "abdesm-data-cache";
 const offlineQueueStorageKey = "abdesm-offline-evaluation-queue";
+const appBuildStorageKey = "abdesm-app-build-id";
+const appBuildId = typeof __APP_BUILD_ID__ === "undefined" ? "local-dev" : String(__APP_BUILD_ID__);
 const emptyData = {
   schools: [],
   students: [],
@@ -271,8 +273,19 @@ function isAppInstalled() {
 
 function registerServiceWorker() {
   if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
+  let refreshing = false;
+
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (refreshing) return;
+    refreshing = true;
+    window.location.reload();
+  });
+
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+    navigator.serviceWorker.register(`/sw.js?v=${encodeURIComponent(appBuildId)}`).then((registration) => {
+      registration.update?.();
+      if (registration.waiting) registration.waiting.postMessage({ type: "SKIP_WAITING" });
+    }).catch(() => undefined);
   });
 }
 
@@ -287,6 +300,26 @@ function readJsonStorage(key, fallback) {
 
 function writeJsonStorage(key, value) {
   window.localStorage.setItem(key, JSON.stringify(value));
+}
+
+function syncAppBuildVersion() {
+  if (typeof window === "undefined") return false;
+  const previousBuildId = window.localStorage.getItem(appBuildStorageKey);
+  const hasNewBuild = !!previousBuildId && previousBuildId !== appBuildId;
+
+  if (hasNewBuild) {
+    window.localStorage.removeItem(dataCacheStorageKey);
+  }
+
+  window.localStorage.setItem(appBuildStorageKey, appBuildId);
+  return hasNewBuild;
+}
+
+function clearAppShellCaches() {
+  if (typeof window === "undefined" || !("caches" in window)) return;
+  window.caches.keys()
+    .then((keys) => Promise.all(keys.filter((key) => key.startsWith("nutrativa-shell-")).map((key) => window.caches.delete(key))))
+    .catch(() => undefined);
 }
 
 function waitForNextPaint() {
@@ -335,6 +368,7 @@ function mergeEvaluationsWithLocalQueue(evaluations = [], queue = []) {
 
 function App() {
   const [route, go] = useRoute();
+  const [detectedNewBuild] = useState(() => syncAppBuildVersion());
   const [offlineQueue, setOfflineQueue] = useState(() => readJsonStorage(offlineQueueStorageKey, []));
   const [data, setData] = useState(() => {
     const cached = readJsonStorage(dataCacheStorageKey, null);
@@ -462,7 +496,7 @@ function App() {
   const apiFetch = async (path, options = {}, { token = authToken, allowUnauthorized = false } = {}) => {
     const headers = { ...(options.headers || {}) };
     if (token) headers.Authorization = `Bearer ${token}`;
-    const response = await fetch(`${apiBase}${path}`, { ...options, headers });
+    const response = await fetch(`${apiBase}${path}`, { cache: "no-store", ...options, headers: { "Cache-Control": "no-cache", ...headers } });
     if (response.status === 401 && !allowUnauthorized) {
       clearSession();
       setLoginError("Sua sessao expirou. Entre novamente.");
@@ -565,6 +599,14 @@ function App() {
   useEffect(() => {
     registerServiceWorker();
   }, []);
+
+  useEffect(() => {
+    if (!detectedNewBuild) return;
+    clearAppShellCaches();
+    if (navigator.serviceWorker?.controller) {
+      navigator.serviceWorker.controller.postMessage({ type: "SKIP_WAITING" });
+    }
+  }, [detectedNewBuild]);
 
   useEffect(() => {
     if (isAppInstalled() && !consentState.installAccepted) {
@@ -730,7 +772,8 @@ function App() {
     try {
       const response = await fetch(`${apiBase}/api/auth/login`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-cache" },
         body: JSON.stringify({
           login,
           password,

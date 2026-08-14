@@ -1,4 +1,4 @@
-﻿const CACHE_NAME = "nutrativa-shell-v2";
+const CACHE_NAME = "nutrativa-shell-v3";
 const APP_SHELL = [
   "/",
   "/index.html",
@@ -22,6 +22,19 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
+});
+
+function putInCache(request, response) {
+  if (!response || !response.ok) return response;
+  const copy = response.clone();
+  caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+  return response;
+}
+
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") return;
@@ -31,28 +44,21 @@ self.addEventListener("fetch", (event) => {
 
   if (request.mode === "navigate") {
     event.respondWith(
-      fetch(request)
-        .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put("/index.html", copy));
-          return response;
-        })
+      fetch(request, { cache: "no-store" })
+        .then((response) => putInCache("/index.html", response))
         .catch(() => caches.match("/index.html"))
     );
     return;
   }
 
   if (url.pathname.startsWith("/api/")) {
-    event.respondWith(fetch(request).catch(() => caches.match(request)));
+    event.respondWith(fetch(request, { cache: "no-store" }));
     return;
   }
 
   event.respondWith(
-    caches.match(request).then((cached) => cached || fetch(request).then((response) => {
-      const copy = response.clone();
-      caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
-      return response;
-    }))
+    fetch(request)
+      .then((response) => putInCache(request, response))
+      .catch(() => caches.match(request))
   );
 });
-
