@@ -289,6 +289,16 @@ function writeJsonStorage(key, value) {
   window.localStorage.setItem(key, JSON.stringify(value));
 }
 
+function waitForNextPaint() {
+  return new Promise((resolve) => {
+    if (typeof window === "undefined" || !window.requestAnimationFrame) {
+      window.setTimeout(resolve, 0);
+      return;
+    }
+    window.requestAnimationFrame(() => window.setTimeout(resolve, 0));
+  });
+}
+
 function normalizeAppData(payload = emptyData) {
   return { ...emptyData, ...payload, settings: { ...emptyData.settings, ...(payload.settings || {}) } };
 }
@@ -849,6 +859,7 @@ function App() {
     let imported = 0;
     let failed = 0;
     onProgress?.({ total: payloads.length, processed: 0, imported, failed, done: false });
+    await waitForNextPaint();
 
     for (const [index, payload] of payloads.entries()) {
       const response = await apiFetch(`/api/${collection}`, {
@@ -873,6 +884,7 @@ function App() {
         failed,
         done: index + 1 === payloads.length,
       });
+      if ((index + 1) % 5 === 0 || index + 1 === payloads.length) await waitForNextPaint();
     }
 
     await refresh();
@@ -2304,6 +2316,7 @@ function Schools({ go }) {
 
     try {
       setImportStatus({ active: true, stage: "Lendo arquivo", fileName: file.name, total: 0, processed: 0, imported: 0, failed: 0, percent: 0, startedAt: Date.now(), elapsedSeconds: 0 });
+      await waitForNextPaint();
       const text = await file.text();
       const rows = parseCsv(text);
       if (!rows.length) {
@@ -2313,6 +2326,7 @@ function Schools({ go }) {
       }
 
       setImportStatus((current) => ({ ...(current || {}), active: true, stage: "Validando linhas", total: rows.length, processed: 0, percent: 0 }));
+      await waitForNextPaint();
       const payloads = [];
       const errors = [];
 
@@ -2336,6 +2350,7 @@ function Schools({ go }) {
       }
 
       setImportStatus((current) => ({ ...(current || {}), active: true, stage: "Enviando escolas", total: payloads.length, processed: 0, imported: 0, failed: 0, percent: 0 }));
+      await waitForNextPaint();
       await importRecords("schools", payloads, {
         onProgress: ({ total, processed, imported, failed, done }) => {
           const percent = total ? Math.round((processed / total) * 100) : 0;
@@ -2534,6 +2549,7 @@ function Students({ go }) {
       }
 
       setImportStatus({ active: true, stage: "Lendo arquivo", fileName: file.name, total: 0, processed: 0, imported: 0, failed: 0, percent: 0, startedAt: Date.now(), elapsedSeconds: 0 });
+      await waitForNextPaint();
       const text = await file.text();
       const rows = parseCsv(text);
       if (!rows.length) {
@@ -2542,6 +2558,7 @@ function Students({ go }) {
       }
 
       setImportStatus((current) => ({ ...(current || {}), active: true, stage: "Validando linhas", total: rows.length, processed: 0, percent: 0 }));
+      await waitForNextPaint();
 
       const payloads = [];
       const errors = [];
@@ -2566,6 +2583,7 @@ function Students({ go }) {
       }
 
       setImportStatus((current) => ({ ...(current || {}), active: true, stage: "Enviando alunos", total: payloads.length, processed: 0, imported: 0, failed: 0, percent: 0 }));
+      await waitForNextPaint();
       await importRecords("students", payloads, {
         onProgress: ({ total, processed, imported, failed, done }) => {
           const percent = total ? Math.round((processed / total) * 100) : 0;
