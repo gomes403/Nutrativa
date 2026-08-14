@@ -220,6 +220,17 @@ const evaluationSectionDefaults = {
   },
 };
 
+const schoolCsvAliases = {
+  name: ["nome", "nome da escola", "escola", "school"],
+  zone: ["zona", "zone"],
+  cep: ["cep", "codigo postal", "postal code"],
+  street: ["rua", "logradouro", "endereco", "street"],
+  number: ["numero", "num", "number"],
+  district: ["bairro", "distrito", "district"],
+  city: ["cidade", "municipio", "city"],
+  state: ["estado", "uf", "state"],
+};
+
 const studentCsvAliases = {
   name: ["nome", "nome completo", "aluno", "student"],
   cpf: ["cpf"],
@@ -827,16 +838,19 @@ function App() {
     }
   };
 
-  const importRecords = async (collection, payloads) => {
+  const importRecords = async (collection, payloads, options = {}) => {
+    const onProgress = typeof options.onProgress === "function" ? options.onProgress : null;
     if (!payloads.length) {
       showToast("Nenhum registro valido foi encontrado no arquivo.", "error");
+      onProgress?.({ total: 0, processed: 0, imported: 0, failed: 0, done: true });
       return { ok: false, imported: 0, failed: 0 };
     }
 
     let imported = 0;
     let failed = 0;
+    onProgress?.({ total: payloads.length, processed: 0, imported, failed, done: false });
 
-    for (const payload of payloads) {
+    for (const [index, payload] of payloads.entries()) {
       const response = await apiFetch(`/api/${collection}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -844,11 +858,21 @@ function App() {
       });
 
       if (response.status === 401) {
-        return { ok: false, imported, failed: payloads.length - imported };
+        const result = { ok: false, imported, failed: payloads.length - imported };
+        onProgress?.({ total: payloads.length, processed: payloads.length, imported, failed: result.failed, done: true });
+        return result;
       }
 
       if (!response.ok) failed += 1;
       else imported += 1;
+
+      onProgress?.({
+        total: payloads.length,
+        processed: index + 1,
+        imported,
+        failed,
+        done: index + 1 === payloads.length,
+      });
     }
 
     await refresh();
@@ -2246,18 +2270,110 @@ function ConnectedUsersMap({ users }) {
 }
 
 function Schools({ go }) {
-  const { data, currentUser, deleteRecord } = useAppData();
+  const { data, currentUser, deleteRecord, importRecords, showToast } = useAppData();
   const context = useMemo(() => getNutritionistContext(data, currentUser), [data, currentUser]);
   const visibleSchools = currentUser?.profile === "Nutricionista" ? context.linkedSchools : data.schools;
+  const importInputRef = useRef(null);
+  const [importStatus, setImportStatus] = useState(null);
+
+  const openImportDialog = () => {
+    if (importStatus?.active) {
+      showToast("Aguarde a importacao atual terminar.", "error");
+      return;
+    }
+    importInputRef.current?.click();
+  };
+
+  const downloadCsvTemplate = () => {
+    const csvContent = buildSchoolCsvTemplate();
+    const blob = new Blob([`﻿${csvContent}`], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "modelo-importacao-escolas.csv";
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportFile = async (event) => {
+    const [file] = Array.from(event.target.files || []);
+    event.target.value = "";
+    if (!file) return;
+
+    try {
+      setImportStatus({ active: true, stage: "Lendo arquivo", fileName: file.name, total: 0, processed: 0, imported: 0, failed: 0, percent: 0, startedAt: Date.now(), elapsedSeconds: 0 });
+      const text = await file.text();
+      const rows = parseCsv(text);
+      if (!rows.length) {
+        showToast("O arquivo CSV esta vazio ou sem linhas de dados.", "error");
+        setImportStatus(null);
+        return;
+      }
+
+      setImportStatus((current) => ({ ...(current || {}), active: true, stage: "Validando linhas", total: rows.length, processed: 0, percent: 0 }));
+      const payloads = [];
+      const errors = [];
+
+      rows.forEach((row, index) => {
+        const rowNumber = index + 2;
+        try {
+          payloads.push(normalizeSchoolCsvRow(row));
+        } catch (error) {
+          errors.push(`Linha ${rowNumber}: ${error.message}`);
+        }
+      });
+
+      if (!payloads.length) {
+        showToast(errors.length ? `Nenhum registro valido foi encontrado. ${errors[0]}` : "Nenhum registro valido foi encontrado no arquivo.", "error");
+        setImportStatus(null);
+        return;
+      }
+
+      if (errors.length) {
+        showToast(`${payloads.length} escola(s) valida(s). ${errors.slice(0, 2).join(" | ")}`, "error");
+      }
+
+      setImportStatus((current) => ({ ...(current || {}), active: true, stage: "Enviando escolas", total: payloads.length, processed: 0, imported: 0, failed: 0, percent: 0 }));
+      await importRecords("schools", payloads, {
+        onProgress: ({ total, processed, imported, failed, done }) => {
+          const percent = total ? Math.round((processed / total) * 100) : 0;
+          setImportStatus((current) => {
+            const startedAt = current?.startedAt || Date.now();
+            return {
+              ...(current || {}),
+              active: !done,
+              stage: done ? "Importacao concluida" : "Enviando escolas",
+              total,
+              processed,
+              imported,
+              failed,
+              percent,
+              startedAt,
+              elapsedSeconds: Math.max(0, Math.round((Date.now() - startedAt) / 1000)),
+            };
+          });
+        },
+      });
+      window.setTimeout(() => setImportStatus(null), 3500);
+    } catch {
+      showToast("Nao foi possivel ler o arquivo CSV.", "error");
+      setImportStatus(null);
+    }
+  };
+
   return (
     <PageCard title="Escolas" crumb={currentUser?.profile === "Nutricionista" ? "Nutricionista / Escolas" : "Escolas"}>
       {currentUser?.profile !== "Nutricionista" && (
         <Toolbar>
           <button className="btn success" onClick={() => go("/escolas/create")}><PlusCircle size={17} /> Nova Escola</button>
-          <button className="btn success" type="button"><Upload size={17} /> Importar CSV</button>
-          <button className="btn outline info" type="button"><Download size={17} /> Baixar Modelo CSV</button>
+          <button className="btn success" type="button" onClick={openImportDialog} disabled={importStatus?.active}><Upload size={17} /> {importStatus?.active ? "Importando..." : "Importar CSV"}</button>
+          <button className="btn outline info" type="button" onClick={downloadCsvTemplate}><Download size={17} /> Baixar Modelo CSV</button>
         </Toolbar>
       )}
+      {importStatus && <CsvImportProgress status={importStatus} />}
+      {currentUser?.profile !== "Nutricionista" && <input ref={importInputRef} type="file" accept=".csv,text/csv" hidden onChange={handleImportFile} />}
       {currentUser?.profile === "Nutricionista" && <div className="alert success">A listagem abaixo mostra apenas as escolas vinculadas ao seu atendimento nutricional.</div>}
       <SearchBox placeholder="Buscar por nome, cidade, bairro ou rua" />
       <DataBlock>
@@ -2332,6 +2448,7 @@ function Students({ go }) {
   const { data, deleteRecord, clearCollection, importRecords, showToast } = useAppData();
   const importInputRef = useRef(null);
   const [showClearWarning, setShowClearWarning] = useState(false);
+  const [importStatus, setImportStatus] = useState(null);
   const schoolName = (id) => findById(data.schools, id)?.name || "";
   const csvColumnOrder = "nome, cpf, data_nascimento, sexo, telefone, email, responsavel, escola_id, matricula, tipo_ensino, serie, turma, turno";
   const [draftFilters, setDraftFilters] = useState({
@@ -2381,6 +2498,10 @@ function Students({ go }) {
   };
 
   const openImportDialog = () => {
+    if (importStatus?.active) {
+      showToast("Aguarde a importacao atual terminar.", "error");
+      return;
+    }
     if (!data.schools.length) {
       showToast("Cadastre pelo menos uma escola antes de importar alunos.", "error");
       return;
@@ -2407,12 +2528,20 @@ function Students({ go }) {
     if (!file) return;
 
     try {
+      if (!data.schools.length) {
+        showToast("Cadastre pelo menos uma escola antes de importar alunos.", "error");
+        return;
+      }
+
+      setImportStatus({ active: true, stage: "Lendo arquivo", fileName: file.name, total: 0, processed: 0, imported: 0, failed: 0, percent: 0, startedAt: Date.now(), elapsedSeconds: 0 });
       const text = await file.text();
       const rows = parseCsv(text);
       if (!rows.length) {
         showToast("O arquivo CSV esta vazio ou sem linhas de dados.", "error");
         return;
       }
+
+      setImportStatus((current) => ({ ...(current || {}), active: true, stage: "Validando linhas", total: rows.length, processed: 0, percent: 0 }));
 
       const payloads = [];
       const errors = [];
@@ -2426,13 +2555,41 @@ function Students({ go }) {
         }
       });
 
-      if (errors.length) {
-        showToast(errors.slice(0, 2).join(" | "), "error");
+      if (!payloads.length) {
+        showToast(errors.length ? `Nenhum registro valido foi encontrado. ${errors[0]}` : "Nenhum registro valido foi encontrado no arquivo.", "error");
+        setImportStatus(null);
+        return;
       }
 
-      await importRecords("students", payloads);
+      if (errors.length) {
+        showToast(`${payloads.length} aluno(s) valido(s). ${errors.slice(0, 2).join(" | ")}`, "error");
+      }
+
+      setImportStatus((current) => ({ ...(current || {}), active: true, stage: "Enviando alunos", total: payloads.length, processed: 0, imported: 0, failed: 0, percent: 0 }));
+      await importRecords("students", payloads, {
+        onProgress: ({ total, processed, imported, failed, done }) => {
+          const percent = total ? Math.round((processed / total) * 100) : 0;
+          setImportStatus((current) => {
+            const startedAt = current?.startedAt || Date.now();
+            return {
+              ...(current || {}),
+              active: !done,
+              stage: done ? "Importacao concluida" : "Enviando alunos",
+              total,
+              processed,
+              imported,
+              failed,
+              percent,
+              startedAt,
+              elapsedSeconds: Math.max(0, Math.round((Date.now() - startedAt) / 1000)),
+            };
+          });
+        },
+      });
+      window.setTimeout(() => setImportStatus(null), 3500);
     } catch {
       showToast("Nao foi possivel ler o arquivo CSV.", "error");
+      setImportStatus(null);
     }
   };
 
@@ -2453,10 +2610,11 @@ function Students({ go }) {
     <PageCard title="Alunos" crumb="Alunos">
       <Toolbar>
         <button className="btn success" onClick={() => go("/alunos/create")}><PlusCircle size={17} /> Novo Aluno</button>
-        <button className="btn success" type="button" onClick={openImportDialog}><Upload size={17} /> Importar CSV</button>
+        <button className="btn success" type="button" onClick={openImportDialog} disabled={importStatus?.active}><Upload size={17} /> {importStatus?.active ? "Importando..." : "Importar CSV"}</button>
         <button className="btn outline info" type="button" onClick={downloadCsvTemplate}><Download size={17} /> Baixar Modelo CSV</button>
         <button className="btn danger ghost" type="button" onClick={clearStudents}><Trash2 size={17} /> Limpar Dados</button>
       </Toolbar>
+      {importStatus && <CsvImportProgress status={importStatus} />}
       {showClearWarning && (
         <div className="danger-box">
           <div>
@@ -2683,6 +2841,28 @@ function UsersPage({ go }) {
         />
       </DataBlock>
     </PageCard>
+  );
+}
+
+function CsvImportProgress({ status }) {
+  const percent = Math.max(0, Math.min(100, Number(status?.percent || 0)));
+  return (
+    <div className={`csv-import-progress ${status.active ? "active" : "done"}`}>
+      <div className="csv-import-progress-head">
+        <div>
+          <strong>{status.stage || "Importando CSV"}</strong>
+          <span>{status.fileName || "Arquivo CSV"}</span>
+        </div>
+        <b>{percent}%</b>
+      </div>
+      <div className="csv-import-bar"><span style={{ width: `${percent}%` }} /></div>
+      <div className="csv-import-meta">
+        <span>{status.processed || 0} de {status.total || 0} processados</span>
+        <span>{status.imported || 0} importados</span>
+        <span>{status.failed || 0} falhas</span>
+        <span>{status.elapsedSeconds || 0}s decorridos</span>
+      </div>
+    </div>
   );
 }
 
@@ -3907,6 +4087,25 @@ function CookieBar({ consentState, installReady, installPromptAvailable, isInsta
     </aside>
   );
 }
+function buildSchoolCsvTemplate() {
+  const header = "nome;zona;cep;rua;numero;bairro;cidade;estado";
+  return `${header}
+${buildSchoolCsvExample(";")}`;
+}
+
+function buildSchoolCsvExample(delimiter = ", ") {
+  return [
+    "CRECHE EXEMPLO",
+    "Urbana",
+    "50000-000",
+    "Rua Principal",
+    "123",
+    "Centro",
+    "Recife",
+    "PE",
+  ].join(delimiter);
+}
+
 function buildStudentCsvTemplate(schools) {
   const header = "nome;cpf;data_nascimento;sexo;telefone;email;responsavel;escola_id;matricula;tipo_ensino;serie;turma;turno";
   const example = buildStudentCsvExample(schools, ";");
@@ -4009,11 +4208,36 @@ function getCsvValue(row, aliases) {
   return "";
 }
 
+function normalizeSchoolCsvRow(row) {
+  const name = getCsvValue(row, schoolCsvAliases.name);
+  if (!name) throw new Error("o campo nome da escola e obrigatorio");
+
+  return {
+    name,
+    zone: canonicalZone(getCsvValue(row, schoolCsvAliases.zone)),
+    cep: getCsvValue(row, schoolCsvAliases.cep),
+    street: getCsvValue(row, schoolCsvAliases.street),
+    number: getCsvValue(row, schoolCsvAliases.number),
+    district: getCsvValue(row, schoolCsvAliases.district),
+    city: getCsvValue(row, schoolCsvAliases.city),
+    state: getCsvValue(row, schoolCsvAliases.state).toUpperCase(),
+  };
+}
+
+function canonicalZone(value) {
+  const normalized = normalizeCsvKey(value);
+  if (!normalized) return "";
+  if (["urbana", "urbano"].includes(normalized)) return "Urbana";
+  if (["rural"].includes(normalized)) return "Rural";
+  return String(value || "").trim();
+}
+
 function normalizeStudentCsvRow(row, schools) {
   const name = getCsvValue(row, studentCsvAliases.name);
   if (!name) throw new Error("o campo nome e obrigatorio");
 
-  const schoolText = getCsvValue(row, studentCsvAliases.school);
+  const classroomText = getCsvValue(row, studentCsvAliases.classroom);
+  const schoolText = getCsvValue(row, studentCsvAliases.school) || classroomText;
   const schoolIdText = getCsvValue(row, studentCsvAliases.schoolId);
   const schoolId = resolveSchoolId({ schoolIdText, schoolText }, schools);
   if (!schoolId) throw new Error("a escola e obrigatoria e precisa existir no cadastro");
@@ -4042,8 +4266,22 @@ function normalizeStudentCsvRow(row, schools) {
     shift,
     educationType,
     grade,
-    classroom: getCsvValue(row, studentCsvAliases.classroom),
+    classroom: normalizeClassroomValue(classroomText, findById(schools, schoolId)),
   };
+}
+
+function normalizeClassroomValue(value, school) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+
+  const normalizedText = normalizeCsvKey(text);
+  const normalizedSchool = normalizeCsvKey(school?.name);
+  if (normalizedSchool && normalizedText === normalizedSchool) return "";
+
+  const letterMatch = text.match(/^([A-Z])\s*[-\u2013\u2014]/i);
+  if (letterMatch) return letterMatch[1].toUpperCase();
+
+  return text;
 }
 
 function resolveSchoolId({ schoolIdText, schoolText }, schools) {
@@ -4054,9 +4292,14 @@ function resolveSchoolId({ schoolIdText, schoolText }, schools) {
 
   if (schoolText) {
     const normalizedSchool = normalizeCsvKey(schoolText);
-    const byName = schools.find((school) => normalizeCsvKey(school.name) === normalizedSchool);
+    const byName = schools.find((school) => {
+      const schoolName = normalizeCsvKey(school.name);
+      return schoolName === normalizedSchool || normalizedSchool.includes(schoolName) || schoolName.includes(normalizedSchool);
+    });
     if (byName) return byName.id;
   }
+
+  if (schools.length === 1) return schools[0].id;
 
   return "";
 }

@@ -1101,6 +1101,25 @@ td { padding: 15px 14px; border-bottom: 1px solid rgba(111,143,98,.08); color: #
 .students-filter-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
 .students-filter-actions { display: flex; gap: 8px; align-items: center; }
 .csv-help { margin-top: 12px; border: 1px solid rgba(111,143,98,.1); padding: 12px 16px; border-radius: 14px; color: #6d8167; background: rgba(255,255,255,.84); }
+.csv-import-progress {
+  margin: -4px 0 16px;
+  border: 1px solid rgba(92, 183, 160, .22);
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(240, 251, 246, .96), rgba(255, 248, 231, .9));
+  box-shadow: 0 16px 36px rgba(52, 83, 45, .08);
+  padding: 15px 18px;
+  display: grid;
+  gap: 10px;
+  position: relative;
+  z-index: 1;
+}
+.csv-import-progress.done { border-color: rgba(108, 171, 90, .28); }
+.csv-import-progress-head, .csv-import-meta { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; }
+.csv-import-progress-head strong { display: block; color: #31583e; font-size: 15px; }
+.csv-import-progress-head span, .csv-import-meta { color: #66805f; font-weight: 700; font-size: 12px; }
+.csv-import-progress-head b { color: #4d9349; font-size: 18px; }
+.csv-import-bar { height: 10px; border-radius: 999px; background: rgba(111,143,98,.13); overflow: hidden; }
+.csv-import-bar span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #67b65d, #59b9a7); transition: width .25s ease; }
 .danger-box {
   margin: -6px 0 14px;
   border: 1px solid rgba(217,107,100,.24);
