@@ -2597,6 +2597,7 @@ function Students({ go }) {
       const rows = parseCsv(text);
       if (!rows.length) {
         showToast("O arquivo CSV esta vazio ou sem linhas de dados.", "error");
+        setImportStatus(null);
         return;
       }
 
@@ -2907,21 +2908,31 @@ function UsersPage({ go }) {
 
 function CsvImportProgress({ status }) {
   const percent = Math.max(0, Math.min(100, Number(status?.percent || 0)));
+  const processed = Number(status?.processed || 0);
+  const total = Number(status?.total || 0);
+  const isDone = !status?.active;
+
   return (
-    <div className={`csv-import-progress ${status.active ? "active" : "done"}`}>
-      <div className="csv-import-progress-head">
-        <div>
-          <strong>{status.stage || "Importando CSV"}</strong>
-          <span>{status.fileName || "Arquivo CSV"}</span>
+    <div className={`csv-import-progress ${isDone ? "done" : "active"}`} role="status" aria-live="polite" aria-label="Progresso da importacao CSV">
+      <div className="csv-import-progress-card">
+        <div className="csv-import-progress-head">
+          <div>
+            <small>{status.fileName || "Arquivo CSV"}</small>
+            <strong>{status.stage || "Importando CSV"}</strong>
+          </div>
+          <b>{percent}%</b>
         </div>
-        <b>{percent}%</b>
-      </div>
-      <div className="csv-import-bar"><span style={{ width: `${percent}%` }} /></div>
-      <div className="csv-import-meta">
-        <span>{status.processed || 0} de {status.total || 0} processados</span>
-        <span>{status.imported || 0} importados</span>
-        <span>{status.failed || 0} falhas</span>
-        <span>{status.elapsedSeconds || 0}s decorridos</span>
+        <div className="csv-import-counter">
+          <span>{processed}</span>
+          <small>de {total || "..."} registros processados</small>
+        </div>
+        <div className="csv-import-bar"><span style={{ width: `${percent}%` }} /></div>
+        <div className="csv-import-meta">
+          <span>{status.imported || 0} importados</span>
+          <span>{status.failed || 0} falhas</span>
+          <span>{status.elapsedSeconds || 0}s decorridos</span>
+        </div>
+        {!isDone && <p className="csv-import-wait">Aguarde, nao feche esta tela ate finalizar.</p>}
       </div>
     </div>
   );
