@@ -86,9 +86,9 @@ function createDataStore(options = {}) {
   const config = {
     client: resolveDatabaseClient(options),
     sqliteFile: options.sqliteFile || process.env.SQLITE_FILE || path.join(__dirname, "..", "data", "app.sqlite"),
-    legacyJsonFile: options.legacyJsonFile || path.join(__dirname, "..", "data", "store.json"),
-    legacyBackupFile: options.legacyBackupFile || path.join(__dirname, "..", "data", "store.pre-sqlite-backup.json"),
-    initialStateFile: options.initialStateFile || path.join(__dirname, "..", "data", "initial-state.json"),
+    legacyJsonFile: options.legacyJsonFile || process.env.LEGACY_JSON_FILE || path.join(__dirname, "..", "data", "store.json"),
+    legacyBackupFile: options.legacyBackupFile || process.env.LEGACY_BACKUP_FILE || path.join(__dirname, "..", "data", "store.pre-sqlite-backup.json"),
+    initialStateFile: options.initialStateFile || process.env.INITIAL_STATE_FILE || path.join(__dirname, "..", "data", "initial-state.json"),
     mysqlHost: process.env.MYSQL_HOST || "127.0.0.1",
     mysqlPort: Number(process.env.MYSQL_PORT || 3306),
     mysqlUser: process.env.MYSQL_USER || "root",

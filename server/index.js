@@ -26,6 +26,12 @@ function ensureDataStoreReady() {
   getDataStore();
   return dataStoreReady;
 }
+
+async function destroyDataStore() {
+  if (dataStore) await dataStore.destroy();
+  dataStore = null;
+  dataStoreReady = null;
+}
 const authUser = {
   id: "admin-local",
   login: process.env.AUTH_LOGIN || "admin",
@@ -115,12 +121,57 @@ function normalizeLogin(value) {
 }
 
 function findAuthenticableUser(login, store) {
-  if (normalizeLogin(authUser.login) === login) return authUser;
-
-  return (store.users || []).find((user) => {
+  const savedUser = (store.users || []).find((user) => {
     const possibleLogins = [user.login, user.email].map(normalizeLogin).filter(Boolean);
     return possibleLogins.includes(login);
+  });
+
+  if (savedUser) return savedUser;
+  if (normalizeLogin(authUser.login) === login) return authUser;
+  return null;
+}
+
+async function findStoredUserByAuthUser(user) {
+  if (!user?.id) return null;
+  const storedById = await dataStore.getCollectionItem("users", user.id);
+  if (storedById) return storedById;
+
+  const users = await dataStore.getCollection("users");
+  const login = normalizeLogin(user.login || user.email);
+  return users.find((item) => {
+    const possibleLogins = [item.login, item.email].map(normalizeLogin).filter(Boolean);
+    return possibleLogins.includes(login);
   }) || null;
+}
+
+async function persistUserPassword(user, nextPassword) {
+  const storedUser = await findStoredUserByAuthUser(user);
+  const baseUser = storedUser || {
+    ...authUser,
+    id: user?.id || authUser.id,
+    login: user?.login || authUser.login,
+    name: user?.name || authUser.name,
+    profile: user?.profile || authUser.profile,
+    status: "Ativo",
+    createdAt: new Date().toISOString(),
+  };
+
+  const updatedUser = { ...baseUser, password: nextPassword, updatedAt: new Date().toISOString() };
+  if (storedUser) await dataStore.updateCollectionItem("users", storedUser.id, updatedUser);
+  else await dataStore.createCollectionItem("users", updatedUser);
+  return updatedUser;
+}
+
+function refreshUserSessions(user) {
+  const serializedUser = serializeAuthUser(user);
+  for (const session of authSessions.values()) {
+    const sameId = String(session?.userId || session?.user?.id || "") === String(user.id || "");
+    const sameLogin = normalizeLogin(session?.user?.login) === normalizeLogin(user.login || user.email);
+    if (sameId || sameLogin) {
+      session.userId = user.id;
+      session.user = serializedUser;
+    }
+  }
 }
 
 function createSession(user) {
@@ -522,6 +573,30 @@ app.post("/api/reset", async (_req, res) => {
   res.json({ ok: true });
 });
 
+app.put("/api/auth/password", async (req, res) => {
+  const currentPassword = String(req.body?.currentPassword || "");
+  const nextPassword = String(req.body?.password || "").trim();
+
+  if (nextPassword.length < 6) {
+    return res.status(400).json({ error: "A nova senha deve ter pelo menos 6 caracteres." });
+  }
+
+  const storedUser = await findStoredUserByAuthUser(req.authUser);
+  const isMasterAuthUser = String(req.authUser?.id || "") === String(authUser.id) || normalizeLogin(req.authUser?.login) === normalizeLogin(authUser.login);
+  const user = storedUser || (isMasterAuthUser ? authUser : null);
+  if (!user) {
+    return res.status(404).json({ error: "Usuario nao encontrado." });
+  }
+
+  if (String(user.password || "") !== currentPassword) {
+    return res.status(401).json({ error: "Senha atual invalida." });
+  }
+
+  const updatedUser = await persistUserPassword(user, nextPassword);
+  refreshUserSessions(updatedUser);
+  res.json({ ok: true, user: sanitizeUserRecord(updatedUser) });
+});
+
 app.put("/api/users/:id/password", async (req, res) => {
   if (req.authUser?.profile !== "Administrador") {
     return res.status(403).json({ error: "Somente administradores podem redefinir senhas." });
@@ -537,8 +612,8 @@ app.put("/api/users/:id/password", async (req, res) => {
     return res.status(404).json({ error: "Usuario nao encontrado." });
   }
 
-  const updatedUser = { ...user, password: nextPassword };
-  await dataStore.updateCollectionItem("users", req.params.id, updatedUser);
+  const updatedUser = await persistUserPassword(user, nextPassword);
+  refreshUserSessions(updatedUser);
 
   res.json({ ok: true, user: sanitizeUserRecord(updatedUser) });
 });
@@ -564,3 +639,4 @@ if (require.main === module) {
 module.exports = app;
 module.exports.start = start;
 module.exports.ensureDataStoreReady = ensureDataStoreReady;
+module.exports.destroyDataStore = destroyDataStore;

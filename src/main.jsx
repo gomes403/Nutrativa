@@ -973,6 +973,32 @@ function App() {
     }
   };
 
+  const changeOwnPassword = async ({ currentPassword, password }) => {
+    try {
+      const response = await apiFetch("/api/auth/password", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword, password }),
+      });
+      if (response.status === 401) {
+        const message = await readError(response, "Senha atual invalida.");
+        showToast(message, "error");
+        return false;
+      }
+      if (!response.ok) {
+        throw new Error(await readError(response, "Nao foi possivel alterar a senha."));
+      }
+      const payload = await response.json();
+      if (payload.user) persistCurrentUser(payload.user);
+      await refresh();
+      showToast("Senha alterada com sucesso.");
+      return true;
+    } catch (error) {
+      showToast(error.message || "Falha ao alterar senha.", "error");
+      return false;
+    }
+  };
+
   const resetUserPassword = async (userId, password) => {
     try {
       const response = await apiFetch(`/api/users/${userId}/password`, {
@@ -1020,7 +1046,7 @@ function App() {
   }
 
   return (
-    <DataContext.Provider value={{ currentUser, data, activeCampaign, refresh, saveRecord, deleteRecord, clearCollection, importRecords, startEvaluation, releaseEvaluation, saveSettings, resetUserPassword, showToast, logout }}>
+    <DataContext.Provider value={{ currentUser, data, activeCampaign, refresh, saveRecord, deleteRecord, clearCollection, importRecords, startEvaluation, releaseEvaluation, saveSettings, changeOwnPassword, resetUserPassword, showToast, logout }}>
       <Shell route={route} go={go} onLogout={logout}>
         {toast && <div className={`toast ${toast.type}`}>{toast.text}</div>}
         {isBootstrapping && <div className="alert">Carregando dados do sistema...</div>}
@@ -3406,21 +3432,48 @@ function SettingsPage() {
 }
 
 function Profile() {
-  const { currentUser } = useAppData();
+  const { currentUser, changeOwnPassword, showToast } = useAppData();
+
+  const submit = async (event) => {
+    event.preventDefault();
+    const values = readForm(event.currentTarget);
+    const currentPassword = String(values.currentPassword || "");
+    const password = String(values.password || "").trim();
+    const confirmPassword = String(values.confirmPassword || "").trim();
+
+    if (!currentPassword) {
+      showToast("Informe a senha atual.", "error");
+      return;
+    }
+    if (password.length < 6) {
+      showToast("A nova senha deve ter pelo menos 6 caracteres.", "error");
+      return;
+    }
+    if (password !== confirmPassword) {
+      showToast("A confirmacao da senha nao confere.", "error");
+      return;
+    }
+
+    const saved = await changeOwnPassword({ currentPassword, password });
+    if (saved) event.currentTarget.reset();
+  };
+
   return (
     <PageCard title="Meu Perfil" crumb="Profile">
-      <FormSection title="Informacoes do Usuario">
-        <Field label="Foto do perfil" type="file" />
-        <Field label="Nome" defaultValue={currentUser?.name} />
-        <Field label="Login" defaultValue={currentUser?.login} />
-      </FormSection>
-      <FormSection title="Alterar Senha">
-        <p className="muted wide">Garanta que sua conta esteja protegida utilizando uma senha longa, segura e dificil de adivinhar.</p>
-        <Field label="Senha Atual" type="password" />
-        <Field label="Nova Senha" type="password" />
-        <Field label="Confirmar Nova Senha" type="password" />
-      </FormSection>
-      <button className="floating-save" type="button"><Save size={17} /> Salvar</button>
+      <form onSubmit={submit}>
+        <FormSection title="Informacoes do Usuario">
+          <Field label="Foto do perfil" type="file" />
+          <Field label="Nome" defaultValue={currentUser?.name} disabled />
+          <Field label="Login" defaultValue={currentUser?.login} disabled />
+        </FormSection>
+        <FormSection title="Alterar Senha">
+          <p className="muted wide">Garanta que sua conta esteja protegida utilizando uma senha longa, segura e dificil de adivinhar.</p>
+          <Field name="currentPassword" label="Senha Atual" type="password" required />
+          <Field name="password" label="Nova Senha" type="password" required />
+          <Field name="confirmPassword" label="Confirmar Nova Senha" type="password" required />
+        </FormSection>
+        <button className="floating-save" type="submit"><Save size={17} /> Salvar</button>
+      </form>
     </PageCard>
   );
 }
@@ -3704,8 +3757,8 @@ function FormSection({ title, children }) {
   return <section className="form-section"><h2>{title}</h2><div className="form-grid">{children}</div></section>;
 }
 
-function Field({ label, name, type = "text", wide, defaultValue = "", required }) {
-  return <label className={`field ${wide ? "wide" : ""}`}><span>{label}</span><input name={name} type={type} defaultValue={defaultValue || ""} required={required} /></label>;
+function Field({ label, name, type = "text", wide, defaultValue = "", required, disabled }) {
+  return <label className={`field ${wide ? "wide" : ""}`}><span>{label}</span><input name={name} type={type} defaultValue={defaultValue || ""} required={required} disabled={disabled} /></label>;
 }
 
 function SelectField({ label, name, options, wide, compact, defaultValue = "", required, onChange, value, disabled }) {
