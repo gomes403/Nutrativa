@@ -68,7 +68,16 @@ function createKnexConfig(config) {
 function resolveDatabaseClient(options = {}) {
   const explicitClient = options.client || process.env.DB_CLIENT;
   if (explicitClient) return String(explicitClient).toLowerCase();
-  if (options.databaseUrl || process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.POSTGRES_PRISMA_URL || process.env.POSTGRES_URL_NON_POOLING || process.env.SUPABASE_DB_URL) return "postgres";
+  if (
+    options.databaseUrl ||
+    process.env.DATABASE_URL ||
+    process.env.SUPABASE_POOLER_URL ||
+    process.env.DATABASE_POOLER_URL ||
+    process.env.POSTGRES_URL ||
+    process.env.POSTGRES_PRISMA_URL ||
+    process.env.POSTGRES_URL_NON_POOLING ||
+    process.env.SUPABASE_DB_URL
+  ) return "postgres";
   if (process.env.VERCEL || process.env.VERCEL_ENV) return "postgres";
   return "sqlite";
 }
@@ -85,7 +94,16 @@ function createDataStore(options = {}) {
     mysqlUser: process.env.MYSQL_USER || "root",
     mysqlPassword: process.env.MYSQL_PASSWORD || "",
     mysqlDatabase: process.env.MYSQL_DATABASE || "abdesm",
-    databaseUrl: options.databaseUrl || process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.POSTGRES_PRISMA_URL || process.env.POSTGRES_URL_NON_POOLING || process.env.SUPABASE_DB_URL || "",
+    databaseUrl:
+      options.databaseUrl ||
+      process.env.DATABASE_URL ||
+      process.env.SUPABASE_POOLER_URL ||
+      process.env.DATABASE_POOLER_URL ||
+      process.env.POSTGRES_URL ||
+      process.env.POSTGRES_PRISMA_URL ||
+      process.env.POSTGRES_URL_NON_POOLING ||
+      process.env.SUPABASE_DB_URL ||
+      "",
     postgresHost: process.env.POSTGRES_HOST || process.env.PGHOST || "127.0.0.1",
     postgresPort: Number(process.env.POSTGRES_PORT || process.env.PGPORT || 5432),
     postgresUser: process.env.POSTGRES_USER || process.env.PGUSER || "postgres",
