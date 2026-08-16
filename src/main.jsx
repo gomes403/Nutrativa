@@ -2601,7 +2601,7 @@ function Students({ go }) {
     setAppliedFilters({ ...emptyFilters });
     setShowClearWarning(false);
     setClearScope("all");
-    showToast("Filtros limpos.");
+    showToast("Filtros limpos. Nenhum aluno foi apagado.");
   };
 
   const openImportDialog = () => {
@@ -2763,14 +2763,14 @@ function Students({ go }) {
         <button className="btn success" onClick={() => go("/alunos/create")}><PlusCircle size={17} /> Novo Aluno</button>
         <button className="btn success" type="button" onClick={openImportDialog} disabled={importStatus?.active}><Upload size={17} /> {importStatus?.active ? "Importando..." : "Importar CSV"}</button>
         <button className="btn outline info" type="button" onClick={downloadCsvTemplate}><Download size={17} /> Baixar Modelo CSV</button>
-        <button className="btn danger ghost" type="button" onClick={clearStudents}><Trash2 size={17} /> Limpar Dados</button>
+        <button className="btn danger" type="button" onClick={clearStudents}><Trash2 size={17} /> Apagar alunos</button>
       </Toolbar>
       {importStatus && <CsvImportProgress status={importStatus} />}
       {showClearWarning && (
         <div className="danger-overlay" role="dialog" aria-modal="true" aria-labelledby="clear-students-title">
           <div className="danger-box">
             <div>
-              <strong id="clear-students-title">Atencao ao limpar dados</strong>
+              <strong id="clear-students-title">Atencao ao apagar alunos</strong>
               <p>Escolha se deseja apagar todos os alunos, apenas a lista filtrada atual ou os alunos da escola selecionada.</p>
               <label className="field">
                 <span>Escopo da exclusao</span>
@@ -2863,7 +2863,7 @@ function Students({ go }) {
           <button className="btn outline muted-btn" type="button" onClick={clearFilters}>Limpar filtros</button>
         </div>
         <p className="students-filter-summary">
-          Exibindo {filteredStudents.length} de {data.students.length} aluno(s). O botao Limpar Dados pode remover todos ou somente esta lista filtrada.
+          Exibindo {filteredStudents.length} de {data.students.length} aluno(s). O botao Apagar alunos pode remover todos ou somente esta lista filtrada.
         </p>
       </div>
       <DataBlock>
