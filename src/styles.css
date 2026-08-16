@@ -1100,6 +1100,13 @@ td { padding: 15px 14px; border-bottom: 1px solid rgba(111,143,98,.08); color: #
 }
 .students-filter-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
 .students-filter-actions { display: flex; gap: 8px; align-items: center; }
+.students-filter-summary {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #66805f;
+  font-size: 13px;
+  font-weight: 700;
+}
 .csv-help { margin-top: 12px; border: 1px solid rgba(111,143,98,.1); padding: 12px 16px; border-radius: 14px; color: #6d8167; background: rgba(255,255,255,.84); }
 .csv-import-progress {
   position: fixed;
@@ -1139,20 +1146,32 @@ td { padding: 15px 14px; border-bottom: 1px solid rgba(111,143,98,.08); color: #
 .csv-import-bar { height: 14px; border-radius: 999px; background: rgba(111,143,98,.13); overflow: hidden; }
 .csv-import-bar span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #67b65d, #59b9a7); transition: width .2s ease; }
 .csv-import-wait { margin: 0; text-align: center; }
+.danger-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  background: rgba(39, 55, 42, .24);
+  backdrop-filter: blur(6px);
+}
 .danger-box {
-  margin: -6px 0 14px;
+  width: min(620px, 100%);
+  margin: 0;
   border: 1px solid rgba(217,107,100,.24);
   border-radius: 18px;
-  background: rgba(255, 242, 238, .84);
-  padding: 14px 16px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  background: rgba(255, 248, 245, .98);
+  padding: 20px;
+  display: grid;
   gap: 16px;
+  box-shadow: 0 24px 60px rgba(110, 68, 62, .22);
 }
 .danger-box strong { display: block; color: #985a53; margin-bottom: 6px; }
-.danger-box p { margin: 0; color: #a36861; }
-.danger-box-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.danger-box p { margin: 0 0 14px; color: #a36861; line-height: 1.5; }
+.danger-box p:last-child { margin-bottom: 0; }
+.danger-box .field { margin: 12px 0; }
+.danger-box-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
 .password-reset-box {
   margin: 0 0 18px;
   border: 1px solid rgba(92, 183, 160, .22);

@@ -2767,23 +2767,25 @@ function Students({ go }) {
       </Toolbar>
       {importStatus && <CsvImportProgress status={importStatus} />}
       {showClearWarning && (
-        <div className="danger-box">
-          <div>
-            <strong>Atencao ao limpar dados</strong>
-            <p>Escolha se deseja apagar todos os alunos ou apenas os alunos da escola selecionada.</p>
-            <label className="field">
-              <span>Escopo da exclusao</span>
-              <select value={clearScope} onChange={(event) => setClearScope(event.target.value)}>
-                <option value="all">Todos os alunos cadastrados ({data.students.length})</option>
-                <option value="filtered" disabled={!hasActiveStudentFilters}>Apenas a lista filtrada atual ({filteredStudents.length})</option>
-                <option value="school" disabled={!selectedSchoolForClear}>Apenas escola selecionada{selectedSchoolForClear ? ": " + selectedSchoolForClear.name + " (" + selectedSchoolStudentCount + ")" : ""}</option>
-              </select>
-            </label>
-            <p>Esta acao apagara permanentemente {clearTargetCount} aluno(s).</p>
-          </div>
-          <div className="danger-box-actions">
-            <button className="btn outline muted-btn" type="button" onClick={() => setShowClearWarning(false)}>Cancelar</button>
-            <button className="btn danger" type="button" onClick={confirmClearStudents} disabled={!clearTargetCount}><Trash2 size={17} /> Confirmar exclusao</button>
+        <div className="danger-overlay" role="dialog" aria-modal="true" aria-labelledby="clear-students-title">
+          <div className="danger-box">
+            <div>
+              <strong id="clear-students-title">Atencao ao limpar dados</strong>
+              <p>Escolha se deseja apagar todos os alunos, apenas a lista filtrada atual ou os alunos da escola selecionada.</p>
+              <label className="field">
+                <span>Escopo da exclusao</span>
+                <select value={clearScope} onChange={(event) => setClearScope(event.target.value)}>
+                  <option value="all">Todos os alunos cadastrados ({data.students.length})</option>
+                  <option value="filtered" disabled={!hasActiveStudentFilters}>Apenas a lista filtrada atual ({filteredStudents.length})</option>
+                  <option value="school" disabled={!selectedSchoolForClear}>Apenas escola selecionada{selectedSchoolForClear ? ": " + selectedSchoolForClear.name + " (" + selectedSchoolStudentCount + ")" : ""}</option>
+                </select>
+              </label>
+              <p>Esta acao apagara permanentemente {clearTargetCount} aluno(s).</p>
+            </div>
+            <div className="danger-box-actions">
+              <button className="btn outline muted-btn" type="button" onClick={() => setShowClearWarning(false)}>Cancelar</button>
+              <button className="btn danger" type="button" onClick={confirmClearStudents} disabled={!clearTargetCount}><Trash2 size={17} /> Confirmar exclusao</button>
+            </div>
           </div>
         </div>
       )}
@@ -2860,6 +2862,9 @@ function Students({ go }) {
           <button className="btn primary" type="button" onClick={applyFilters}><Search size={16} /> Buscar</button>
           <button className="btn outline muted-btn" type="button" onClick={clearFilters}>Limpar filtros</button>
         </div>
+        <p className="students-filter-summary">
+          Exibindo {filteredStudents.length} de {data.students.length} aluno(s). O botao Limpar Dados pode remover todos ou somente esta lista filtrada.
+        </p>
       </div>
       <DataBlock>
         <Table
