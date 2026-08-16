@@ -4435,7 +4435,7 @@ function normalizeStudentCsvRow(row, schools) {
   if (!name) throw new Error("o campo nome e obrigatorio");
 
   const classroomText = getCsvValue(row, studentCsvAliases.classroom);
-  const schoolText = getCsvValue(row, studentCsvAliases.school) || classroomText;
+  const schoolText = getCsvValue(row, studentCsvAliases.school);
   const schoolIdText = getCsvValue(row, studentCsvAliases.schoolId);
   const schoolId = resolveSchoolId({ schoolIdText, schoolText }, schools);
   if (!schoolId) throw new Error("a escola e obrigatoria e precisa existir no cadastro");
@@ -4484,7 +4484,8 @@ function normalizeClassroomValue(value, school) {
 
 function resolveSchoolId({ schoolIdText, schoolText }, schools) {
   if (schoolIdText) {
-    const byId = schools.find((school) => String(school.schoolCode) === schoolIdText || String(school.id) === schoolIdText);
+    const normalizedSchoolId = String(schoolIdText || "").trim();
+    const byId = schools.find((school) => String(school.schoolCode || "").trim() === normalizedSchoolId || String(school.id || "").trim() === normalizedSchoolId);
     if (byId) return byId.id;
   }
 
@@ -4492,12 +4493,10 @@ function resolveSchoolId({ schoolIdText, schoolText }, schools) {
     const normalizedSchool = normalizeCsvKey(schoolText);
     const byName = schools.find((school) => {
       const schoolName = normalizeCsvKey(school.name);
-      return schoolName === normalizedSchool || normalizedSchool.includes(schoolName) || schoolName.includes(normalizedSchool);
+      return schoolName === normalizedSchool;
     });
     if (byName) return byName.id;
   }
-
-  if (schools.length === 1) return schools[0].id;
 
   return "";
 }

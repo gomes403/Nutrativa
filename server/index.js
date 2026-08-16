@@ -168,6 +168,13 @@ function findDuplicateStudent(students = [], candidate = {}, ignoredId = "") {
   }) || null;
 }
 
+function validateStudentSchool(student = {}, schools = []) {
+  const schoolId = String(student.schoolId || student.escola_id || "").trim();
+  if (!schoolId) return "Informe uma escola cadastrada para o aluno.";
+  const exists = schools.some((school) => String(school.id || "").trim() === schoolId || String(school.schoolCode || "").trim() === schoolId);
+  return exists ? "" : "A escola informada para o aluno nao existe no cadastro.";
+}
+
 function findAuthenticableUser(login, store) {
   const savedUser = (store.users || []).find((user) => {
     const possibleLogins = [user.login, user.email].map(normalizeLogin).filter(Boolean);
@@ -444,6 +451,12 @@ function collectionRoute(name) {
     }
 
     if (name === "students") {
+      const schools = await dataStore.getCollection("schools");
+      const schoolValidationError = validateStudentSchool(item, schools);
+      if (schoolValidationError) {
+        return res.status(400).json({ error: schoolValidationError });
+      }
+
       const duplicate = findDuplicateStudent(rows, item);
       if (duplicate) {
         return res.status(409).json({ error: "Aluno ja cadastrado com os mesmos dados de identificacao." });
@@ -475,6 +488,12 @@ function collectionRoute(name) {
 
     if (name === "students") {
       const rows = await dataStore.getCollection(name);
+      const schools = await dataStore.getCollection("schools");
+      const schoolValidationError = validateStudentSchool(item, schools);
+      if (schoolValidationError) {
+        return res.status(400).json({ error: schoolValidationError });
+      }
+
       const duplicate = findDuplicateStudent(rows, item, currentItem.id);
       if (duplicate) {
         return res.status(409).json({ error: "Aluno ja cadastrado com os mesmos dados de identificacao." });
