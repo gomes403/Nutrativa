@@ -910,6 +910,31 @@ function App() {
     }
   };
 
+  const clearStudentsByIds = async (studentIds = []) => {
+    const ids = [...new Set(studentIds.map((id) => String(id || "").trim()).filter(Boolean))];
+    if (!ids.length) {
+      showToast("Nenhum aluno foi encontrado para remover.", "error");
+      return false;
+    }
+
+    try {
+      const response = await apiFetch("/api/students", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      if (response.status === 401) return false;
+      if (!response.ok) throw new Error(await readError(response, "Nao foi possivel limpar a lista selecionada."));
+      const payload = await response.json().catch(() => ({}));
+      await refresh();
+      showToast(`${payload.deleted || ids.length} aluno(s) removido(s) com sucesso.`);
+      return true;
+    } catch (error) {
+      showToast(error.message || "Falha ao limpar a lista selecionada.", "error");
+      return false;
+    }
+  };
+
   const importRecords = async (collection, payloads, options = {}) => {
     const onProgress = typeof options.onProgress === "function" ? options.onProgress : null;
     if (!payloads.length) {
@@ -1144,7 +1169,7 @@ function App() {
   }
 
   return (
-    <DataContext.Provider value={{ currentUser, data, activeCampaign, refresh, saveRecord, deleteRecord, clearCollection, clearStudentsBySchool, importRecords, startEvaluation, releaseEvaluation, saveSettings, changeOwnPassword, resetUserPassword, showToast, logout }}>
+    <DataContext.Provider value={{ currentUser, data, activeCampaign, refresh, saveRecord, deleteRecord, clearCollection, clearStudentsBySchool, clearStudentsByIds, importRecords, startEvaluation, releaseEvaluation, saveSettings, changeOwnPassword, resetUserPassword, showToast, logout }}>
       <Shell route={route} go={go} onLogout={logout}>
         {toast && <div className={`toast ${toast.type}`}>{toast.text}</div>}
         {isBootstrapping && <div className="alert">Carregando dados do sistema...</div>}
@@ -2522,7 +2547,7 @@ function SchoolDetail({ id, go }) {
 }
 
 function Students({ go }) {
-  const { data, deleteRecord, clearCollection, clearStudentsBySchool, importRecords, showToast } = useAppData();
+  const { data, deleteRecord, clearCollection, clearStudentsBySchool, clearStudentsByIds, importRecords, showToast } = useAppData();
   const importInputRef = useRef(null);
   const [showClearWarning, setShowClearWarning] = useState(false);
   const [clearScope, setClearScope] = useState("all");
@@ -2564,6 +2589,7 @@ function Students({ go }) {
       return matchesSearch && matchesSchool && matchesGrade && matchesClassroom && matchesShift;
     });
   }, [appliedFilters, data.schools, data.students]);
+  const hasActiveStudentFilters = Object.values(appliedFilters).some((value) => String(value || "").trim());
 
   const applyFilters = () => {
     setAppliedFilters(draftFilters);
@@ -2573,6 +2599,8 @@ function Students({ go }) {
     const emptyFilters = { search: "", schoolId: "", grade: "", classroom: "", shift: "" };
     setDraftFilters({ ...emptyFilters });
     setAppliedFilters({ ...emptyFilters });
+    setShowClearWarning(false);
+    setClearScope("all");
     showToast("Filtros limpos.");
   };
 
@@ -2692,20 +2720,21 @@ function Students({ go }) {
     }
   };
 
-  const selectedSchoolForClear = findById(data.schools, draftFilters.schoolId || appliedFilters.schoolId);
+  const selectedSchoolForClear = findById(data.schools, appliedFilters.schoolId);
   const selectedSchoolStudentCount = selectedSchoolForClear ? data.students.filter((student) => String(student.schoolId) === String(selectedSchoolForClear.id)).length : 0;
-  const clearTargetCount = clearScope === "school" ? selectedSchoolStudentCount : data.students.length;
+  const clearTargetCount = clearScope === "filtered" ? filteredStudents.length : clearScope === "school" ? selectedSchoolStudentCount : data.students.length;
 
   const clearStudents = async () => {
     if (!data.students.length) {
       showToast("Nao ha alunos cadastrados para remover.", "error");
       return;
     }
-    setClearScope((draftFilters.schoolId || appliedFilters.schoolId) ? "school" : "all");
+    setClearScope(hasActiveStudentFilters ? "filtered" : "all");
     setShowClearWarning(true);
   };
 
   const confirmClearStudents = async () => {
+    let cleared = false;
     if (clearScope === "school") {
       if (!selectedSchoolForClear) {
         showToast("Selecione uma escola para limpar os alunos dela.", "error");
@@ -2715,11 +2744,17 @@ function Students({ go }) {
         showToast("Nao ha alunos cadastrados nesta escola.", "error");
         return;
       }
-      await clearStudentsBySchool(selectedSchoolForClear.id);
+      cleared = await clearStudentsBySchool(selectedSchoolForClear.id);
+    } else if (clearScope === "filtered") {
+      if (!filteredStudents.length) {
+        showToast("Nenhum aluno foi encontrado na lista filtrada.", "error");
+        return;
+      }
+      cleared = await clearStudentsByIds(filteredStudents.map((student) => student.id));
     } else {
-      await clearCollection("students");
+      cleared = await clearCollection("students");
     }
-    setShowClearWarning(false);
+    if (cleared) setShowClearWarning(false);
   };
 
   return (
@@ -2740,6 +2775,7 @@ function Students({ go }) {
               <span>Escopo da exclusao</span>
               <select value={clearScope} onChange={(event) => setClearScope(event.target.value)}>
                 <option value="all">Todos os alunos cadastrados ({data.students.length})</option>
+                <option value="filtered" disabled={!hasActiveStudentFilters}>Apenas a lista filtrada atual ({filteredStudents.length})</option>
                 <option value="school" disabled={!selectedSchoolForClear}>Apenas escola selecionada{selectedSchoolForClear ? ": " + selectedSchoolForClear.name + " (" + selectedSchoolStudentCount + ")" : ""}</option>
               </select>
             </label>
@@ -2822,7 +2858,7 @@ function Students({ go }) {
         </div>
         <div className="students-filter-actions">
           <button className="btn primary" type="button" onClick={applyFilters}><Search size={16} /> Buscar</button>
-          <button className="btn outline muted-btn" type="button" onClick={clearFilters}>Limpar</button>
+          <button className="btn outline muted-btn" type="button" onClick={clearFilters}>Limpar filtros</button>
         </div>
       </div>
       <DataBlock>

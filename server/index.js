@@ -398,6 +398,14 @@ function collectionRoute(name) {
   });
 
   app.delete(`/api/${name}`, async (req, res) => {
+    if (name === "students" && Array.isArray(req.body?.ids) && req.body.ids.length) {
+      const ids = new Set(req.body.ids.map((id) => String(id)));
+      const rows = await dataStore.getCollection(name);
+      const remainingRows = rows.filter((student) => !ids.has(String(student.id)));
+      await dataStore.replaceCollection(name, remainingRows);
+      return res.json({ ok: true, deleted: rows.length - remainingRows.length });
+    }
+
     if (name === "students" && req.query?.schoolId) {
       const schoolId = String(req.query.schoolId || "").trim();
       const rows = await dataStore.getCollection(name);
@@ -526,7 +534,7 @@ app.get("/api/health", async (_req, res) => {
     ok: true,
     service: "nutrativa-local-api",
     database: {
-      client: dataStore.config.client === "sqlite" ? "sqlite" : "mysql2",
+      client: dataStore.config.client,
       schemaVersion: schemaVersion || "1",
     },
   });
