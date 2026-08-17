@@ -300,7 +300,17 @@ function readJsonStorage(key, fallback) {
 }
 
 function writeJsonStorage(key, value) {
-  window.localStorage.setItem(key, JSON.stringify(value));
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch {
+    try {
+      window.localStorage.removeItem(key);
+    } catch {
+      // Ignore storage cleanup failures.
+    }
+    return false;
+  }
 }
 
 function syncAppBuildVersion() {
@@ -521,9 +531,9 @@ function App() {
       if (response.status === 401) return false;
       if (!response.ok) throw new Error("API indisponivel");
       const payload = await response.json();
-      writeJsonStorage(dataCacheStorageKey, payload);
       const normalized = normalizeAppData(payload);
       setData({ ...normalized, evaluations: mergeEvaluationsWithLocalQueue(normalized.evaluations || [], offlineQueue) });
+      writeJsonStorage(dataCacheStorageKey, payload);
       setApiUnavailable(false);
       return true;
     } catch {
