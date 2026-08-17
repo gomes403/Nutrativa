@@ -353,6 +353,8 @@ h1 { margin: 0; font-size: 2rem; letter-spacing: -.05em; line-height: 1.05; disp
 .alert.success { background: linear-gradient(135deg, rgba(108,171,90,.14), rgba(92,183,160,.14)); border: 1px solid rgba(108,171,90,.22); color: #3f6944; }
 .alert.error { background: rgba(217,107,100,.12); border: 1px solid rgba(217,107,100,.24); color: #8b514d; }
 .alert.warn { background: rgba(255, 246, 217, .96); border: 1px solid rgba(217,160,16,.24); color: #8a6922; }
+.api-offline-alert { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.api-offline-alert .btn { background: rgba(255,255,255,.76); color: currentColor; min-height: 38px; padding: 8px 13px; }
 .warning-light { background: #f2b758; color: #503813; }
 
 .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 26px; position: relative; z-index: 1; }

@@ -32,6 +32,7 @@ import {
   Menu,
   PlusCircle,
   Redo2,
+  RefreshCw,
   Save,
   Search,
   Settings,
@@ -585,6 +586,28 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (!apiUnavailable || !authToken || !currentUser) return undefined;
+
+    let stopped = false;
+    const retryBootstrap = () => {
+      if (stopped || document.visibilityState === "hidden") return;
+      refresh(authToken);
+    };
+
+    const intervalId = window.setInterval(retryBootstrap, 15000);
+    window.addEventListener("focus", retryBootstrap);
+    window.addEventListener("online", retryBootstrap);
+    retryBootstrap();
+
+    return () => {
+      stopped = true;
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", retryBootstrap);
+      window.removeEventListener("online", retryBootstrap);
+    };
+  }, [apiUnavailable, authToken, currentUser]);
+
+  useEffect(() => {
     if (!authReady) return;
     if (currentUser && route === "/login") go("/dashboard");
     if (!currentUser && route !== "/login") go("/login");
@@ -793,8 +816,8 @@ function App() {
       const payload = await response.json();
       persistAuthToken(payload.token);
       persistCurrentUser(payload.user);
-      await refresh(payload.token);
-      showToast("Login realizado com sucesso.");
+      const synced = await refresh(payload.token);
+      showToast(synced ? "Login realizado com sucesso." : "Login realizado. Tentando sincronizar dados do servidor.");
       go("/dashboard");
       return true;
     } catch {
@@ -1173,7 +1196,15 @@ function App() {
       <Shell route={route} go={go} onLogout={logout}>
         {toast && <div className={`toast ${toast.type}`}>{toast.text}</div>}
         {isBootstrapping && <div className="alert">Carregando dados do sistema...</div>}
-        {apiUnavailable && <div className="alert error">Sem conexao com o servidor. O sistema pode continuar usando os dados deste dispositivo e sincronizara quando voltar.</div>}
+        {apiUnavailable && (
+          <div className="alert error api-offline-alert">
+            <span>Sem conexao com o servidor. O sistema pode continuar usando os dados deste dispositivo e sincronizara quando voltar.</span>
+            <button className="btn outline" type="button" onClick={() => refresh(authToken)} disabled={isBootstrapping}>
+              <RefreshCw size={17} />
+              {isBootstrapping ? "Sincronizando..." : "Tentar sincronizar"}
+            </button>
+          </div>
+        )}
         {offlineQueue.length > 0 && <div className="alert warn">{offlineQueue.length} acao(oes) offline aguardando sincronizacao.</div>}
         <Page route={route} go={go} />
       </Shell>
