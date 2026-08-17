@@ -1,5 +1,5 @@
 const cors = require("cors");
-const { randomUUID } = require("crypto");
+const { createHmac, randomUUID, timingSafeEqual } = require("crypto");
 const express = require("express");
 const { createDataStore } = require("./db");
 
@@ -9,6 +9,7 @@ const host = process.env.API_HOST || "0.0.0.0";
 const cfnBaseUrl = "https://cfn.org.br";
 const cfnNewsApiUrl = `${cfnBaseUrl}/wp-json/wp/v2/posts?per_page=4&_fields=link,date,title,excerpt`;
 const newsCacheTtlMs = 15 * 60 * 1000;
+const authTokenTtlMs = Number(process.env.AUTH_TOKEN_TTL_MS || 7 * 24 * 60 * 60 * 1000);
 const authSessions = new Map();
 let dataStore = null;
 let dataStoreReady = null;
@@ -229,10 +230,78 @@ function refreshUserSessions(user) {
   }
 }
 
+function base64UrlEncode(value) {
+  return Buffer.from(String(value), "utf8")
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+function base64UrlDecode(value) {
+  const normalized = String(value || "").replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized.padEnd(normalized.length + ((4 - normalized.length % 4) % 4), "=");
+  return Buffer.from(padded, "base64").toString("utf8");
+}
+
+function getAuthTokenSecret() {
+  return process.env.AUTH_TOKEN_SECRET
+    || process.env.DATABASE_URL
+    || process.env.SUPABASE_POOLER_URL
+    || process.env.DATABASE_POOLER_URL
+    || process.env.AUTH_PASSWORD
+    || "nutrativa-local-session";
+}
+
+function signTokenPayload(encodedPayload) {
+  return createHmac("sha256", getAuthTokenSecret()).update(encodedPayload).digest("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+function safeTokenCompare(left, right) {
+  const leftBuffer = Buffer.from(String(left || ""));
+  const rightBuffer = Buffer.from(String(right || ""));
+  return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
+}
+
 function createSession(user) {
-  const token = randomUUID();
-  authSessions.set(token, { userId: user.id, user: serializeAuthUser(user), createdAt: Date.now() });
+  const now = Date.now();
+  const session = { userId: user.id, user: serializeAuthUser(user), createdAt: now };
+  const payload = {
+    userId: session.userId,
+    user: session.user,
+    iat: now,
+    exp: now + authTokenTtlMs,
+  };
+  const encodedPayload = base64UrlEncode(JSON.stringify(payload));
+  const token = `v1.${encodedPayload}.${signTokenPayload(encodedPayload)}`;
+  authSessions.set(token, session);
   return token;
+}
+
+function verifySignedSession(token) {
+  const [version, encodedPayload, signature] = String(token || "").split(".");
+  if (version !== "v1" || !encodedPayload || !signature) return null;
+  if (!safeTokenCompare(signature, signTokenPayload(encodedPayload))) return null;
+
+  try {
+    const payload = JSON.parse(base64UrlDecode(encodedPayload));
+    if (!payload?.user?.id || !payload?.exp || Number(payload.exp) < Date.now()) return null;
+    return {
+      userId: payload.userId || payload.user.id,
+      user: payload.user,
+      createdAt: Number(payload.iat) || Date.now(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function getSessionFromToken(token) {
+  if (!token) return null;
+  return authSessions.get(token) || verifySignedSession(token);
 }
 
 function listActiveUsers() {
@@ -388,7 +457,7 @@ function findBlockingCampaign(campaigns = [], nextCampaign, today = startOfToday
 
 function requireAuth(req, res, next) {
   const token = getTokenFromRequest(req);
-  const session = token ? authSessions.get(token) : null;
+  const session = getSessionFromToken(token);
   if (!token || !session) {
     return res.status(401).json({ error: "Autenticacao obrigatoria." });
   }
