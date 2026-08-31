@@ -1486,16 +1486,56 @@ function PageCard({ title, crumb, children, icon, className = "" }) {
 }
 
 function Dashboard({ go }) {
-  const { data, currentUser } = useAppData();
+  const { data, currentUser, refresh } = useAppData();
   if (currentUser?.profile === "Nutricionista") {
     return <NutritionistDashboard go={go} />;
   }
 
+  useEffect(() => {
+    let stopped = false;
+    const refreshDashboard = () => {
+      if (stopped || document.visibilityState === "hidden") return;
+      refresh();
+    };
+
+    const intervalId = window.setInterval(refreshDashboard, 30000);
+    window.addEventListener("focus", refreshDashboard);
+    window.addEventListener("online", refreshDashboard);
+
+    return () => {
+      stopped = true;
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", refreshDashboard);
+      window.removeEventListener("online", refreshDashboard);
+    };
+  }, []);
   const studentsByYear = data.dashboard.studentsByYear || [];
+  const finalizedEvaluations = useMemo(() => (data.evaluations || []).filter(isEvaluationFinalized), [data.evaluations]);
+  const evaluationsByMonth = useMemo(() => {
+    const months = new Map();
+    finalizedEvaluations.forEach((evaluation) => {
+      const dateValue = evaluation.evaluatedAt || evaluation.updatedAt || evaluation.createdAt;
+      const date = new Date(dateValue);
+      const sortKey = Number.isNaN(date.getTime()) ? "9999-99" : `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      const label = formatMonthYear(dateValue);
+      const current = months.get(sortKey) || { sortKey, label, total: 0 };
+      current.total += 1;
+      months.set(sortKey, current);
+    });
+    return Array.from(months.values()).sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+  }, [finalizedEvaluations]);
+  const recentFinalizedEvaluations = useMemo(() => finalizedEvaluations
+    .slice()
+    .sort((a, b) => new Date(b.evaluatedAt || b.updatedAt || b.createdAt) - new Date(a.evaluatedAt || a.updatedAt || a.createdAt))
+    .slice(0, 5), [finalizedEvaluations]);
   const chartData = useMemo(() => ({
     labels: studentsByYear.map((item) => item.label),
     datasets: [{ label: "Total de Alunos", data: studentsByYear.map((item) => item.total), backgroundColor: "#68b35a", borderColor: "#3d8f41", borderWidth: 1, borderRadius: 10 }],
   }), [studentsByYear]);
+  const evaluationMonthChartData = useMemo(() => ({
+    labels: evaluationsByMonth.map((item) => item.label),
+    datasets: [{ label: "Avaliacoes finalizadas", data: evaluationsByMonth.map((item) => item.total), backgroundColor: "#5aa65a", borderColor: "#356f3b", borderWidth: 1, borderRadius: 10 }],
+  }), [evaluationsByMonth]);
   return (
     <PageCard title="Central de Operacoes" crumb="Admin / Dashboard">
       <div className="alert success">Ambiente administrativo ativo. Perfil conectado: <b>{currentUser?.profile || "Administrador"}</b>.</div>
@@ -1507,9 +1547,20 @@ function Dashboard({ go }) {
       </div>
       <div className="grid two">
         <Panel title="Alunos por Ano Letivo">{studentsByYear.length ? <div className="chart-box"><Bar data={chartData} options={chartOptions} /></div> : <EmptyState text="Nenhum dado disponivel." />}</Panel>
-        <Panel title="Avaliacoes por Mes"><EmptyState text="Nenhum dado disponivel." /></Panel>
+        <Panel title="Avaliacoes por Mes">{evaluationsByMonth.length ? <div className="chart-box"><Bar data={evaluationMonthChartData} options={chartOptions} /></div> : <EmptyState text="Nenhum dado disponivel." />}</Panel>
         <Panel title="Top 5 Escolas com mais alunos"><Table headers={["Escola", "Total de Alunos"]} rows={(data.dashboard.topSchools || []).map((s) => [s.name, s.students || 0])} empty="Nenhuma escola cadastrada." /></Panel>
-        <Panel title="Ultimas Avaliacoes Realizadas"><EmptyState text="Nenhuma avaliacao registrada." /></Panel>
+        <Panel title="Ultimas Avaliacoes Realizadas">
+          <Table
+            headers={["Aluno", "Escola", "Data", "Nutricionista"]}
+            rows={recentFinalizedEvaluations.map((evaluation) => [
+              evaluation.studentName || findById(data.students, evaluation.studentId)?.name || "-",
+              evaluation.schoolName || findById(data.schools, evaluation.schoolId)?.name || "-",
+              formatDateTime(evaluation.evaluatedAt || evaluation.updatedAt || evaluation.createdAt),
+              evaluation.nutritionistName || "-",
+            ])}
+            empty="Nenhuma avaliacao registrada."
+          />
+        </Panel>
       </div>
       <Panel title="Mapa de Acessos em Tempo Real">
         <ConnectedUsersMap users={data.activeUsers || []} />
@@ -2062,7 +2113,7 @@ function NutritionEvaluationForm({ studentId, go }) {
 }
 
 function NutritionistReportsPage({ go }) {
-  const { data, currentUser } = useAppData();
+  const { data, currentUser, refresh } = useAppData();
   const context = useMemo(() => getNutritionistContext(data, currentUser), [data, currentUser]);
 
   return (
@@ -2091,7 +2142,7 @@ function NutritionistReportsPage({ go }) {
 }
 
 function NutritionistReportDetail({ evaluationId, go, scope = "nutritionist" }) {
-  const { data, currentUser } = useAppData();
+  const { data, currentUser, refresh } = useAppData();
   const context = useMemo(() => getNutritionistContext(data, currentUser), [data, currentUser]);
   const evaluations = scope === "admin" ? (data.evaluations || []) : context.myEvaluations;
   const evaluation = evaluations.find((item) => String(item.id) === String(evaluationId));
@@ -5064,6 +5115,9 @@ function resolveRouteLabel(route) {
 }
 
 createRoot(document.getElementById("root")).render(<App />);
+
+
+
 
 
 
