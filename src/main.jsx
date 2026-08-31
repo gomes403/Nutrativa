@@ -78,8 +78,10 @@ const authUserStorageKey = "abdesm-auth-user";
 const consentStorageKey = "abdesm-login-consent";
 const dataCacheStorageKey = "abdesm-data-cache";
 const offlineQueueStorageKey = "abdesm-offline-evaluation-queue";
+const nutritionEvaluationFiltersStorageKey = "abdesm-nutrition-evaluation-filters";
 const appBuildStorageKey = "abdesm-app-build-id";
 const appBuildId = typeof __APP_BUILD_ID__ === "undefined" ? "local-dev" : String(__APP_BUILD_ID__);
+const emptyNutritionEvaluationFilters = { schoolId: "", grade: "", shift: "", classroom: "", search: "" };
 const emptyData = {
   schools: [],
   students: [],
@@ -1580,13 +1582,12 @@ function NutritionEvaluationsPage({ go }) {
   const { data, currentUser, activeCampaign, startEvaluation, releaseEvaluation, showToast } = useAppData();
   const context = useMemo(() => getNutritionistContext(data, currentUser), [data, currentUser]);
   const currentUserRecord = findById(data.users, currentUser?.id);
-  const [filters, setFilters] = useState({
-    schoolId: "",
-    grade: "",
-    shift: "",
-    classroom: "",
-    search: "",
-  });
+  const filtersStorageKey = `${nutritionEvaluationFiltersStorageKey}:${currentUser?.id || "anon"}`;
+  const [filters, setFilters] = useState(() => readJsonStorage(filtersStorageKey, emptyNutritionEvaluationFilters));
+
+  useEffect(() => {
+    writeJsonStorage(filtersStorageKey, filters);
+  }, [filtersStorageKey, filters]);
   const campaignEvaluations = useMemo(() => getEvaluationsForCampaign(data.evaluations, activeCampaign), [data.evaluations, activeCampaign]);
   const campaignEvaluationByStudentId = useMemo(() => indexEvaluationsByStudent(campaignEvaluations), [campaignEvaluations]);
   const studentsForAttendance = useMemo(
@@ -1711,7 +1712,7 @@ function NutritionEvaluationsPage({ go }) {
           </label>
         </div>
         <div className="students-filter-actions">
-          <button className="btn outline muted-btn" type="button" onClick={() => setFilters({ schoolId: "", grade: "", shift: "", classroom: "", search: "" })}>Limpar</button>
+          <button className="btn outline muted-btn" type="button" onClick={() => setFilters({ ...emptyNutritionEvaluationFilters })}>Limpar</button>
         </div>
       </div>
       <DataBlock>
@@ -5063,4 +5064,6 @@ function resolveRouteLabel(route) {
 }
 
 createRoot(document.getElementById("root")).render(<App />);
+
+
 
