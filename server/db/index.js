@@ -276,6 +276,13 @@ function createDataStore(options = {}) {
     async readStore() {
       return exportStore();
     },
+    async getMeta(metaKey) {
+      return getMeta(metaKey);
+    },
+    async setMeta(metaKey, value) {
+      await setMeta(metaKey, value);
+      return value;
+    },
     async getCollection(collectionName) {
       return listCollection(collectionName);
     },
@@ -388,3 +395,4 @@ function createDataStore(options = {}) {
 module.exports = {
   createDataStore,
 };
+

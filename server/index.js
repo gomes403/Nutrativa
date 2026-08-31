@@ -10,6 +10,8 @@ const cfnBaseUrl = "https://cfn.org.br";
 const cfnNewsApiUrl = `${cfnBaseUrl}/wp-json/wp/v2/posts?per_page=4&_fields=link,date,title,excerpt`;
 const newsCacheTtlMs = 15 * 60 * 1000;
 const authTokenTtlMs = Number(process.env.AUTH_TOKEN_TTL_MS || 7 * 24 * 60 * 60 * 1000);
+const activeUserTtlMs = Number(process.env.ACTIVE_USER_TTL_MS || 10 * 60 * 1000);
+const activeUsersMetaKey = "active-users";
 const authSessions = new Map();
 let dataStore = null;
 let dataStoreReady = null;
@@ -304,37 +306,125 @@ function getSessionFromToken(token) {
   return authSessions.get(token) || verifySignedSession(token);
 }
 
-function listActiveUsers() {
+function normalizePresenceLocation(location = {}) {
+  const latitude = Number(location.latitude);
+  const longitude = Number(location.longitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+
+  const accuracy = Number(location.accuracy);
+  return {
+    latitude,
+    longitude,
+    accuracy: Number.isFinite(accuracy) ? accuracy : null,
+    capturedAt: location.capturedAt || new Date().toISOString(),
+  };
+}
+
+function normalizeActivePresence(item = {}) {
+  const location = normalizePresenceLocation(item.location);
+  const user = item.user;
+  if (!location || !user?.id) return null;
+
+  return {
+    sessionKey: item.sessionKey || String(item.userId || user.id).slice(0, 8),
+    userId: String(item.userId || user.id),
+    user,
+    location,
+    lastSeenAt: item.lastSeenAt || location.capturedAt || new Date().toISOString(),
+  };
+}
+
+async function readStoredActiveUsers() {
+  const stored = await dataStore.getMeta(activeUsersMetaKey);
+  return Array.isArray(stored) ? stored.map(normalizeActivePresence).filter(Boolean) : [];
+}
+
+async function writeStoredActiveUsers(activeUsers) {
+  await dataStore.setMeta(activeUsersMetaKey, activeUsers.map(normalizeActivePresence).filter(Boolean));
+}
+
+function pruneActiveUsers(activeUsers) {
+  const now = Date.now();
+  return activeUsers.filter((item) => {
+    const lastSeen = new Date(item.lastSeenAt || item.location?.capturedAt || 0).getTime();
+    return Number.isFinite(lastSeen) && now - lastSeen <= activeUserTtlMs;
+  });
+}
+
+async function persistActiveUser({ token, user, location }) {
+  const normalizedLocation = normalizePresenceLocation(location);
+  const normalizedUser = serializeAuthUser(user || authUser);
+  if (!normalizedLocation || !normalizedUser?.id) return null;
+
+  const currentUsers = await readStoredActiveUsers();
+  const nextPresence = normalizeActivePresence({
+    sessionKey: String(token || normalizedUser.id).slice(0, 8),
+    userId: normalizedUser.id,
+    user: normalizedUser,
+    location: normalizedLocation,
+    lastSeenAt: new Date().toISOString(),
+  });
+  const nextUsers = [
+    ...currentUsers.filter((item) => String(item.userId || item.user?.id) !== String(normalizedUser.id)),
+    nextPresence,
+  ];
+  await writeStoredActiveUsers(nextUsers);
+  return nextPresence;
+}
+
+async function touchActiveUser(user) {
+  const normalizedUser = serializeAuthUser(user || authUser);
+  if (!normalizedUser?.id) return;
+
+  const currentUsers = await readStoredActiveUsers();
+  const existing = currentUsers.find((item) => String(item.userId || item.user?.id) === String(normalizedUser.id));
+  if (!existing) return;
+
+  await writeStoredActiveUsers([
+    ...currentUsers.filter((item) => String(item.userId || item.user?.id) !== String(normalizedUser.id)),
+    { ...existing, user: normalizedUser, lastSeenAt: new Date().toISOString() },
+  ]);
+}
+
+async function removeActiveUser(userId) {
+  if (!userId) return;
+  const currentUsers = await readStoredActiveUsers();
+  await writeStoredActiveUsers(currentUsers.filter((item) => String(item.userId || item.user?.id) !== String(userId)));
+}
+
+async function listActiveUsers() {
   const latestByUserId = new Map();
 
-  for (const [token, session] of authSessions.entries()) {
-    if (!session?.location || !Number.isFinite(Number(session.location.latitude)) || !Number.isFinite(Number(session.location.longitude))) {
-      continue;
-    }
-
-    const user = session.user || serializeAuthUser(authUser);
-    const capturedAt = new Date(session.location.capturedAt || session.createdAt || Date.now()).getTime();
-    const normalizedSession = {
-      sessionKey: token.slice(0, 8),
-      user,
-      location: {
-        latitude: Number(session.location.latitude),
-        longitude: Number(session.location.longitude),
-        accuracy: Number.isFinite(Number(session.location.accuracy)) ? Number(session.location.accuracy) : null,
-        capturedAt: session.location.capturedAt || null,
-      },
-      _capturedAt: capturedAt,
-    };
-
-    const existing = latestByUserId.get(user.id);
-    if (!existing || normalizedSession._capturedAt >= existing._capturedAt) {
-      latestByUserId.set(user.id, normalizedSession);
-    }
+  for (const item of pruneActiveUsers(await readStoredActiveUsers())) {
+    latestByUserId.set(item.userId || item.user.id, item);
   }
 
-  return Array.from(latestByUserId.values())
-    .sort((a, b) => b._capturedAt - a._capturedAt)
-    .map(({ _capturedAt, ...item }) => item);
+  for (const [token, session] of authSessions.entries()) {
+    const normalizedSession = normalizeActivePresence({
+      sessionKey: token.slice(0, 8),
+      userId: session.userId || session.user?.id,
+      user: session.user || serializeAuthUser(authUser),
+      location: session.location,
+      lastSeenAt: session.lastSeenAt || session.location?.capturedAt || new Date(session.createdAt || Date.now()).toISOString(),
+    });
+    if (!normalizedSession) continue;
+
+    const existing = latestByUserId.get(normalizedSession.userId);
+    const nextSeen = new Date(normalizedSession.lastSeenAt || normalizedSession.location.capturedAt).getTime();
+    const currentSeen = existing ? new Date(existing.lastSeenAt || existing.location.capturedAt).getTime() : 0;
+    if (!existing || nextSeen >= currentSeen) latestByUserId.set(normalizedSession.userId, normalizedSession);
+  }
+
+  const activeUsers = pruneActiveUsers(Array.from(latestByUserId.values()))
+    .sort((a, b) => new Date(b.lastSeenAt || b.location.capturedAt) - new Date(a.lastSeenAt || a.location.capturedAt));
+  await writeStoredActiveUsers(activeUsers);
+
+  return activeUsers.map((item) => ({
+    sessionKey: item.sessionKey,
+    user: item.user,
+    location: item.location,
+    lastSeenAt: item.lastSeenAt,
+  }));
 }
 
 function getTokenFromRequest(req) {
@@ -657,20 +747,24 @@ app.post("/api/auth/login", async (req, res) => {
   }
 
   const token = createSession(user);
+  const sessionLocation = {
+    latitude,
+    longitude,
+    accuracy: Number.isFinite(accuracy) ? accuracy : null,
+    capturedAt: location.capturedAt || new Date().toISOString(),
+  };
+
   authSessions.set(token, {
     ...(authSessions.get(token) || {}),
-    location: {
-      latitude,
-      longitude,
-      accuracy: Number.isFinite(accuracy) ? accuracy : null,
-      capturedAt: location.capturedAt || new Date().toISOString(),
-    },
+    location: sessionLocation,
+    lastSeenAt: new Date().toISOString(),
     consent: {
       optionalCookiesAccepted: !!consent.optionalCookiesAccepted,
       locationAccepted: true,
       installAccepted: true,
     },
   });
+  await persistActiveUser({ token, user, location: sessionLocation });
 
   res.json({ token, user: serializeAuthUser(user) });
 });
@@ -681,12 +775,14 @@ app.get("/api/auth/me", (req, res) => {
   res.json({ user: req.authUser });
 });
 
-app.post("/api/auth/logout", (req, res) => {
+app.post("/api/auth/logout", async (req, res) => {
   authSessions.delete(req.authToken);
+  await removeActiveUser(req.authUser?.id);
   res.json({ ok: true });
 });
 
-app.get("/api/bootstrap", async (_req, res) => {
+app.get("/api/bootstrap", async (req, res) => {
+  await touchActiveUser(req.authUser);
   const store = await dataStore.readStore();
   const schools = store.schools || [];
   const students = store.students || [];
@@ -695,7 +791,7 @@ app.get("/api/bootstrap", async (_req, res) => {
   const evaluations = store.evaluations || [];
   const finalizedEvaluations = evaluations.filter(isEvaluationFinalized);
   const news = await fetchLatestCfnNews();
-  const activeUsers = listActiveUsers();
+  const activeUsers = await listActiveUsers();
   const studentsByYearMap = students.reduce((acc, student) => {
     const key = student.grade || student.serie || "Sem serie";
     acc[key] = (acc[key] || 0) + 1;
@@ -807,3 +903,4 @@ module.exports = app;
 module.exports.start = start;
 module.exports.ensureDataStoreReady = ensureDataStoreReady;
 module.exports.destroyDataStore = destroyDataStore;
+
