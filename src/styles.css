@@ -542,6 +542,16 @@ input[type="file"] { padding: 8px; }
 input[type="range"] { accent-color: var(--green); padding: 6px; }
 .data-block { background: rgba(252, 250, 244, .9); border: 1px solid rgba(111,143,98,.08); border-radius: 24px; padding: 16px; }
 .table-wrap { overflow-x: auto; }
+.load-more-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 4px 0;
+  color: #66805f;
+  font-size: 13px;
+  font-weight: 700;
+}
 table {
   width: 100%;
   border-collapse: collapse;
@@ -1388,6 +1398,7 @@ td { padding: 15px 14px; border-bottom: 1px solid rgba(111,143,98,.08); color: #
   .password-reset-fields { grid-template-columns: 1fr; }
   .field.wide, .wide { grid-column: span 1; }
   .students-filter-actions { flex-direction: column; align-items: stretch; }
+  .load-more-row { flex-direction: column; align-items: stretch; text-align: center; }
   .button-row { grid-template-columns: 1fr; }
   .students-filter-panel { padding: 16px; }
   .students-filter-grid { gap: 10px; }
@@ -1953,3 +1964,4 @@ td { padding: 15px 14px; border-bottom: 1px solid rgba(111,143,98,.08); color: #
     line-height: 1.15 !important;
   }
 }
+

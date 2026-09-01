@@ -82,6 +82,7 @@ const nutritionEvaluationFiltersStorageKey = "abdesm-nutrition-evaluation-filter
 const appBuildStorageKey = "abdesm-app-build-id";
 const appBuildId = typeof __APP_BUILD_ID__ === "undefined" ? "local-dev" : String(__APP_BUILD_ID__);
 const emptyNutritionEvaluationFilters = { schoolId: "", grade: "", shift: "", classroom: "", search: "" };
+const nutritionEvaluationPageSize = 60;
 const emptyData = {
   schools: [],
   students: [],
@@ -1635,6 +1636,7 @@ function NutritionEvaluationsPage({ go }) {
   const currentUserRecord = findById(data.users, currentUser?.id);
   const filtersStorageKey = `${nutritionEvaluationFiltersStorageKey}:${currentUser?.id || "anon"}`;
   const [filters, setFilters] = useState(() => readJsonStorage(filtersStorageKey, emptyNutritionEvaluationFilters));
+  const [visibleStudentsCount, setVisibleStudentsCount] = useState(nutritionEvaluationPageSize);
 
   useEffect(() => {
     writeJsonStorage(filtersStorageKey, filters);
@@ -1663,6 +1665,13 @@ function NutritionEvaluationsPage({ go }) {
       return matchesSearch && matchesSchool && matchesGrade && matchesShift && matchesClassroom;
     });
   }, [studentsForAttendance, data.schools, filters]);
+
+  const visibleStudents = useMemo(() => filteredStudents.slice(0, visibleStudentsCount), [filteredStudents, visibleStudentsCount]);
+  const hiddenStudentsCount = Math.max(filteredStudents.length - visibleStudents.length, 0);
+
+  useEffect(() => {
+    setVisibleStudentsCount(nutritionEvaluationPageSize);
+  }, [filtersStorageKey, filters.schoolId, filters.grade, filters.shift, filters.classroom, filters.search, studentsForAttendance.length]);
 
   const gradeOptions = [["", "Todas as series"], ...uniqueValues(studentsForAttendance.map((student) => student.grade)).map((value) => [value, value])];
   const shiftOptions = [["", "Todos os turnos"], ...uniqueValues(studentsForAttendance.map((student) => student.shift)).map((value) => [value, value])];
@@ -1765,11 +1774,14 @@ function NutritionEvaluationsPage({ go }) {
         <div className="students-filter-actions">
           <button className="btn outline muted-btn" type="button" onClick={() => setFilters({ ...emptyNutritionEvaluationFilters })}>Limpar</button>
         </div>
+        <p className="students-filter-summary">
+          Exibindo {visibleStudents.length} de {filteredStudents.length} aluno(s). Use os filtros para encontrar mais rapido ou carregue mais alunos abaixo.
+        </p>
       </div>
       <DataBlock>
         <Table
           headers={["Nome", "Serie", "Turma", "Escola", "Status", "Nutricionista", "Acoes"]}
-          rows={filteredStudents.map((student) => {
+          rows={visibleStudents.map((student) => {
             const school = findById(data.schools, student.schoolId);
             const evaluation = campaignEvaluationByStudentId[student.id];
             const inProgress = isEvaluationInProgress(evaluation);
@@ -1799,6 +1811,18 @@ function NutritionEvaluationsPage({ go }) {
           })}
           empty={studentsForAttendance.length ? "Nenhum aluno pendente foi encontrado para os filtros selecionados." : "Todos os alunos vinculados ja foram avaliados nesta campanha."}
         />
+        {hiddenStudentsCount > 0 && (
+          <div className="load-more-row">
+            <span>{hiddenStudentsCount} aluno(s) ainda oculto(s) para proteger o desempenho do celular.</span>
+            <button
+              className="btn outline muted-btn"
+              type="button"
+              onClick={() => setVisibleStudentsCount((current) => current + nutritionEvaluationPageSize)}
+            >
+              Carregar mais {Math.min(nutritionEvaluationPageSize, hiddenStudentsCount)}
+            </button>
+          </div>
+        )}
       </DataBlock>
     </PageCard>
   );
@@ -5115,9 +5139,4 @@ function resolveRouteLabel(route) {
 }
 
 createRoot(document.getElementById("root")).render(<App />);
-
-
-
-
-
 
