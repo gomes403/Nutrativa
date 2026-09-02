@@ -3728,7 +3728,206 @@ function ReportSchools() {
 }
 
 function ReportEvaluations() {
-  return <ReportFrame title="Relatorio de Avaliacoes por Aluno" fields={["Tipo de Relatorio", "Escola", "Turma", "Serie", "Sexo", "IMC minimo", "IMC maximo", "Data Inicio", "Data Fim"]} actions={["Filtrar", "PDF", "CSV"]} empty="Nenhuma avaliacao encontrada com os criterios selecionados." />;
+  const { data, showToast } = useAppData();
+  const [filters, setFilters] = useState({
+    reportType: "Simples",
+    schoolId: "",
+    classroom: "",
+    grade: "",
+    sex: "",
+    minBmi: "",
+    maxBmi: "",
+    startDate: "",
+    endDate: "",
+  });
+
+  const evaluationRows = useMemo(() => (data.evaluations || []).filter(isEvaluationFinalized).map((evaluation) => {
+    const student = findById(data.students || [], evaluation.studentId);
+    const school = findById(data.schools || [], evaluation.schoolId || student?.schoolId);
+    const evaluatedAt = evaluation.evaluatedAt || evaluation.updatedAt || evaluation.createdAt || "";
+    const anthropometryResult = evaluateAnthropometricStatus({
+      weight: evaluation?.anthropometry?.weight,
+      height: evaluation?.anthropometry?.height,
+      birthDate: student?.birthDate,
+      sex: evaluation.sex || student?.sex,
+      evaluationDate: evaluatedAt,
+      schoolId: school?.id || evaluation.schoolId,
+      schoolName: evaluation.schoolName || school?.name,
+      grade: evaluation.studentGrade || student?.grade,
+      classroom: evaluation.studentClassroom || student?.classroom,
+    });
+    const bmiValue = Number(String(evaluation?.anthropometry?.bmi || evaluation?.bmi || anthropometryResult.bmi || "").replace(",", "."));
+
+    return {
+      evaluation,
+      student,
+      school,
+      studentName: evaluation.studentName || student?.name || "-",
+      registration: student?.registration || evaluation.registration || "-",
+      responsible: student?.responsible || "-",
+      schoolId: school?.id || evaluation.schoolId || "",
+      schoolName: evaluation.schoolName || school?.name || "-",
+      classroom: evaluation.studentClassroom || student?.classroom || "",
+      grade: evaluation.studentGrade || student?.grade || "",
+      shift: evaluation.studentShift || student?.shift || "",
+      sex: evaluation.sex || student?.sex || "",
+      campaignName: evaluation.campaignName || findCampaignForEvaluation(data.campaigns || [], evaluation)?.name || "-",
+      nutritionistName: evaluation.nutritionistName || "-",
+      classification: evaluation.nutritionalClassification || evaluation.classification || anthropometryResult.classificationLabel || "Nao informada",
+      bmiValue: Number.isFinite(bmiValue) ? bmiValue : null,
+      evaluatedAt,
+      evaluationDate: String(evaluatedAt || "").slice(0, 10),
+    };
+  }), [data.campaigns, data.evaluations, data.schools, data.students]);
+
+  const schoolOptions = useMemo(() => [["", "Todas as escolas"], ...(data.schools || []).map((school) => [school.id, school.name])], [data.schools]);
+  const classroomOptions = useMemo(() => [["", "Todas as turmas"], ...uniqueValues(evaluationRows.filter((item) => !filters.schoolId || String(item.schoolId) === String(filters.schoolId)).map((item) => item.classroom)).map((value) => [value, value])], [evaluationRows, filters.schoolId]);
+  const gradeOptions = useMemo(() => [["", "Todas as series"], ...uniqueValues(evaluationRows.filter((item) => !filters.schoolId || String(item.schoolId) === String(filters.schoolId)).map((item) => item.grade)).map((value) => [value, value])], [evaluationRows, filters.schoolId]);
+  const sexOptions = useMemo(() => [["", "Todos"], ...uniqueValues(evaluationRows.map((item) => item.sex)).map((value) => [value, value])], [evaluationRows]);
+
+  const updateFilter = (field, value) => {
+    setFilters((current) => {
+      if (field === "schoolId") return { ...current, schoolId: value, classroom: "", grade: "" };
+      return { ...current, [field]: value };
+    });
+  };
+
+  const clearFilters = () => {
+    setFilters({ reportType: "Simples", schoolId: "", classroom: "", grade: "", sex: "", minBmi: "", maxBmi: "", startDate: "", endDate: "" });
+  };
+
+  const filteredRows = useMemo(() => evaluationRows.filter((item) => {
+    if (filters.schoolId && String(item.schoolId) !== String(filters.schoolId)) return false;
+    if (filters.classroom && item.classroom !== filters.classroom) return false;
+    if (filters.grade && item.grade !== filters.grade) return false;
+    if (filters.sex && item.sex !== filters.sex) return false;
+    if (filters.minBmi && (!Number.isFinite(item.bmiValue) || item.bmiValue < Number(filters.minBmi))) return false;
+    if (filters.maxBmi && (!Number.isFinite(item.bmiValue) || item.bmiValue > Number(filters.maxBmi))) return false;
+    if (filters.startDate && (!item.evaluationDate || item.evaluationDate < filters.startDate)) return false;
+    if (filters.endDate && (!item.evaluationDate || item.evaluationDate > filters.endDate)) return false;
+    return true;
+  }), [evaluationRows, filters]);
+
+  const summary = useMemo(() => {
+    const students = new Set(filteredRows.map((item) => String(item.evaluation.studentId || item.student?.id || item.evaluation.id)).filter(Boolean));
+    const schools = new Set(filteredRows.map((item) => String(item.schoolId || item.schoolName)).filter(Boolean));
+    const bmiValues = filteredRows.map((item) => item.bmiValue).filter(Number.isFinite);
+    return {
+      evaluations: filteredRows.length,
+      students: students.size,
+      schools: schools.size,
+      averageBmi: bmiValues.length ? bmiValues.reduce((sum, value) => sum + value, 0) / bmiValues.length : null,
+    };
+  }, [filteredRows]);
+
+  const rowsByClassification = useMemo(() => Object.entries(filteredRows.reduce((acc, item) => {
+    const label = item.classification || "Nao informada";
+    acc[label] = (acc[label] || 0) + 1;
+    return acc;
+  }, {})).sort((left, right) => right[1] - left[1]), [filteredRows]);
+
+  const simpleRows = useMemo(() => filteredRows.map((item) => [
+    item.studentName,
+    item.schoolName,
+    item.grade || "-",
+    item.classroom || "-",
+    Number.isFinite(item.bmiValue) ? item.bmiValue.toFixed(2) : "-",
+    item.classification,
+    formatDateTime(item.evaluatedAt),
+  ]), [filteredRows]);
+
+  const analyticRows = useMemo(() => filteredRows.map((item) => [
+    item.studentName,
+    item.registration,
+    item.responsible,
+    item.schoolName,
+    item.grade || "-",
+    item.classroom || "-",
+    item.shift || "-",
+    item.sex || "-",
+    item.campaignName,
+    Number.isFinite(item.bmiValue) ? item.bmiValue.toFixed(2) : "-",
+    item.classification,
+    item.nutritionistName,
+    formatDateTime(item.evaluatedAt),
+  ]), [filteredRows]);
+
+  const reportHeaders = filters.reportType === "Analitico"
+    ? ["Aluno", "Matricula", "Responsavel", "Escola", "Serie", "Turma", "Turno", "Sexo", "Campanha", "IMC", "Classificacao", "Nutricionista", "Data"]
+    : ["Aluno", "Escola", "Serie", "Turma", "IMC", "Classificacao", "Data"];
+  const reportRows = filters.reportType === "Analitico" ? analyticRows : simpleRows;
+
+  const exportCsv = () => {
+    if (!filteredRows.length) {
+      showToast("Nenhuma avaliacao encontrada para exportar.", "error");
+      return;
+    }
+    const escapeCsv = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+    const csv = [reportHeaders, ...reportRows].map((row) => row.map(escapeCsv).join(";")).join("\n");
+    const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `relatorio-avaliacoes-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <PageCard title="Relatorio de Avaliacoes por Aluno" crumb="Relatorios" icon={<ClipboardList className="title-icon" />} className="report-page">
+      <div className="report-filter">
+        <SelectField label="Tipo de Relatorio" value={filters.reportType} onChange={(event) => updateFilter("reportType", event.target.value)} options={["Simples", "Analitico"]} />
+        <SelectField label="Escola" value={filters.schoolId} onChange={(event) => updateFilter("schoolId", event.target.value)} options={schoolOptions} />
+        <SelectField label="Turma" value={filters.classroom} onChange={(event) => updateFilter("classroom", event.target.value)} options={classroomOptions} />
+        <SelectField label="Serie" value={filters.grade} onChange={(event) => updateFilter("grade", event.target.value)} options={gradeOptions} />
+        <SelectField label="Sexo" value={filters.sex} onChange={(event) => updateFilter("sex", event.target.value)} options={sexOptions} />
+        <label className="field">
+          <span>IMC minimo</span>
+          <input type="number" min="0" step="0.01" value={filters.minBmi} onChange={(event) => updateFilter("minBmi", event.target.value)} placeholder="Todos" />
+        </label>
+        <label className="field">
+          <span>IMC maximo</span>
+          <input type="number" min="0" step="0.01" value={filters.maxBmi} onChange={(event) => updateFilter("maxBmi", event.target.value)} placeholder="Todos" />
+        </label>
+        <label className="field">
+          <span>Data Inicio</span>
+          <input type="date" value={filters.startDate} onChange={(event) => updateFilter("startDate", event.target.value)} />
+        </label>
+        <label className="field">
+          <span>Data Fim</span>
+          <input type="date" value={filters.endDate} onChange={(event) => updateFilter("endDate", event.target.value)} />
+        </label>
+        <div className="button-row">
+          <button className="btn outline primary-text" type="button"><Search size={16} /> Filtrar</button>
+          <button className="btn outline danger-text" type="button" onClick={() => window.print()}>PDF</button>
+          <button className="btn outline success-text" type="button" onClick={exportCsv}>CSV</button>
+          <button className="btn outline muted-btn" type="button" onClick={clearFilters}>Limpar</button>
+        </div>
+      </div>
+
+      {filteredRows.length ? (
+        <>
+          <div className="school-report-summary">
+            <div className="report-metric"><span>Avaliacoes</span><strong>{summary.evaluations}</strong></div>
+            <div className="report-metric"><span>Alunos</span><strong>{summary.students}</strong></div>
+            <div className="report-metric"><span>Escolas</span><strong>{summary.schools}</strong></div>
+            <div className="report-metric"><span>IMC Medio</span><strong>{Number.isFinite(summary.averageBmi) ? summary.averageBmi.toFixed(2) : "-"}</strong></div>
+          </div>
+          <Panel title="Classificacao Nutricional">
+            <Table headers={["Classificacao", "Total"]} rows={rowsByClassification.map(([label, total]) => [label, total])} empty="Nenhuma classificacao encontrada." />
+          </Panel>
+          <DataBlock>
+            <Table headers={reportHeaders} rows={reportRows} empty="Nenhuma avaliacao encontrada com os criterios selecionados." />
+          </DataBlock>
+        </>
+      ) : (
+        <div className="alert warning-light">Nenhuma avaliacao encontrada com os criterios selecionados.</div>
+      )}
+      <ReportCompanyFooter />
+    </PageCard>
+  );
 }
 
 function ReportIndividual({ go }) {
