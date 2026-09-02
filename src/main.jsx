@@ -83,6 +83,15 @@ const appBuildStorageKey = "abdesm-app-build-id";
 const appBuildId = typeof __APP_BUILD_ID__ === "undefined" ? "local-dev" : String(__APP_BUILD_ID__);
 const emptyNutritionEvaluationFilters = { schoolId: "", grade: "", shift: "", classroom: "", search: "" };
 const nutritionEvaluationPageSize = 60;
+const schoolReportPrintChunkSize = 16;
+function chunkArray(items, size) {
+  const chunks = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
+
 const emptyData = {
   schools: [],
   students: [],
@@ -3504,6 +3513,7 @@ function ReportSchools() {
   const bmiChartRows = useMemo(() => filteredRows.filter((item) => Number.isFinite(item.averageBmi)), [filteredRows]);
   const maxStudentCount = useMemo(() => Math.max(1, ...chartRows.map((item) => item.studentCount), ...chartRows.map((item) => item.evaluatedStudentCount)), [chartRows]);
   const maxAverageBmi = useMemo(() => Math.max(1, ...bmiChartRows.map((item) => item.averageBmi || 0)), [bmiChartRows]);
+  const studentPrintChunks = useMemo(() => chunkArray(chartRows, schoolReportPrintChunkSize), [chartRows]);
 
   const coverageChartData = useMemo(() => ({
     labels: ["Avaliados", "Nao avaliados"],
@@ -3638,29 +3648,33 @@ function ReportSchools() {
           </div>
         </div>
 
-        <div className="print-chart-card">
-          <h2>Cadastrados x Avaliados por Escola</h2>
-          <div className="print-bar-list">
-            {chartRows.map((item) => (
-              <div className="print-bar-row" key={`students-${item.schoolId}`}>
-                <span className="print-bar-label">{item.schoolName}</span>
-                <div className="print-bar-stack">
-                  <div className="print-track">
-                    <div className="print-bar registered" style={{ width: `${Math.max((item.studentCount / maxStudentCount) * 100, item.studentCount ? 2 : 0)}%` }} />
+        {studentPrintChunks.map((rows, chunkIndex) => (
+          <div className="print-chart-card" key={`students-print-${chunkIndex}`}>
+            <h2>Cadastrados x Avaliados por Escola{chunkIndex ? ` - continuacao ${chunkIndex + 1}` : ""}</h2>
+            <div className="print-bar-list">
+              {rows.map((item) => (
+                <div className="print-bar-row" key={`students-${item.schoolId}`}>
+                  <span className="print-bar-label">{item.schoolName}</span>
+                  <div className="print-bar-stack">
+                    <div className="print-track">
+                      <div className="print-bar registered" style={{ width: `${Math.max((item.studentCount / maxStudentCount) * 100, item.studentCount ? 2 : 0)}%` }} />
+                    </div>
+                    <div className="print-track">
+                      <div className="print-bar evaluated" style={{ width: `${Math.max((item.evaluatedStudentCount / maxStudentCount) * 100, item.evaluatedStudentCount ? 2 : 0)}%` }} />
+                    </div>
                   </div>
-                  <div className="print-track">
-                    <div className="print-bar evaluated" style={{ width: `${Math.max((item.evaluatedStudentCount / maxStudentCount) * 100, item.evaluatedStudentCount ? 2 : 0)}%` }} />
-                  </div>
+                  <span className="print-bar-values">{item.studentCount} / {item.evaluatedStudentCount}</span>
                 </div>
-                <span className="print-bar-values">{item.studentCount} / {item.evaluatedStudentCount}</span>
+              ))}
+            </div>
+            {chunkIndex === 0 && (
+              <div className="print-chart-legend horizontal">
+                <span><i className="legend-green" /> Cadastrados</span>
+                <span><i className="legend-yellow" /> Avaliados</span>
               </div>
-            ))}
+            )}
           </div>
-          <div className="print-chart-legend horizontal">
-            <span><i className="legend-green" /> Cadastrados</span>
-            <span><i className="legend-yellow" /> Avaliados</span>
-          </div>
-        </div>
+        ))}
 
         <div className="print-chart-card">
           <h2>IMC Medio por Escola</h2>

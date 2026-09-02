@@ -1609,12 +1609,19 @@ td { padding: 15px 14px; border-bottom: 1px solid rgba(111,143,98,.08); color: #
     border-radius: 12px !important;
     background: rgba(255,255,255,.98) !important;
     padding: 8px 10px !important;
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+  .print-chart-card.coverage-card {
     break-inside: avoid-page;
+    page-break-inside: avoid;
   }
   .print-chart-card h2 {
     margin: 0 0 8px !important;
     color: #355238 !important;
     font-size: 12px !important;
+    break-after: avoid-page;
+    page-break-after: avoid;
   }
   .print-coverage-layout {
     display: grid !important;
@@ -1664,18 +1671,20 @@ td { padding: 15px 14px; border-bottom: 1px solid rgba(111,143,98,.08); color: #
   }
   .print-bar-list {
     display: grid !important;
-    gap: 8px !important;
+    gap: 5px !important;
   }
   .print-bar-row {
     display: grid !important;
     grid-template-columns: 185px 1fr 52px !important;
     gap: 8px !important;
     align-items: center !important;
+    break-inside: avoid-page;
+    page-break-inside: avoid;
   }
   .print-bar-label {
     color: #4d654b !important;
-    font-size: 9px !important;
-    line-height: 1.15 !important;
+    font-size: 8px !important;
+    line-height: 1.12 !important;
   }
   .print-bar-stack {
     display: grid !important;
@@ -1712,6 +1721,8 @@ td { padding: 15px 14px; border-bottom: 1px solid rgba(111,143,98,.08); color: #
   .school-report-print-schools {
     display: block !important;
     margin-top: 8px !important;
+    break-before: page;
+    page-break-before: always;
     border: 1px solid rgba(111,143,98,.12) !important;
     border-radius: 14px !important;
     background: rgba(255,255,255,.98) !important;
@@ -1726,13 +1737,16 @@ td { padding: 15px 14px; border-bottom: 1px solid rgba(111,143,98,.08); color: #
   .school-report-print-schools ul {
     margin: 0 !important;
     padding-left: 15px !important;
-    display: grid !important;
-    gap: 4px !important;
+    columns: 2 !important;
+    column-gap: 22px !important;
   }
   .school-report-print-schools li {
     color: #355238 !important;
     font-size: 10px !important;
     line-height: 1.25 !important;
+    break-inside: avoid-page;
+    page-break-inside: avoid;
+    margin-bottom: 3px !important;
   }
   .report-section {
     padding-top: 4px !important;
