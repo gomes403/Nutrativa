@@ -3849,7 +3849,277 @@ function ReportIndividual({ go }) {
 }
 
 function ReportCampaign() {
-  return <ReportFrame title="Resumo de Campanha Nutricional" fields={["Estado", "Cidade", "Zona", "Escola", "Campanha", "Data Inicio", "Data Fim"]} actions={["Filtrar", "Limpar", "Gerar PDF"]} empty="Nenhuma avaliacao encontrada para gerar o resumo." />;
+  const { data } = useAppData();
+  const [filters, setFilters] = useState({
+    state: "",
+    city: "",
+    zone: "",
+    schoolId: "",
+    campaignId: "",
+    startDate: "",
+    endDate: "",
+  });
+
+  useEffect(() => {
+    if (!data.campaigns?.length) return;
+    setFilters((current) => {
+      if (current.campaignId || current.startDate || current.endDate) return current;
+      const defaultCampaign = getActiveCampaign(data.campaigns) || getLatestCampaign(data.campaigns);
+      if (!defaultCampaign) return current;
+      return {
+        ...current,
+        campaignId: defaultCampaign.id,
+        startDate: defaultCampaign.startDate || "",
+        endDate: defaultCampaign.endDate || "",
+      };
+    });
+  }, [data.campaigns]);
+
+  const selectedCampaign = useMemo(() => findById(data.campaigns || [], filters.campaignId), [data.campaigns, filters.campaignId]);
+  const filteredSchoolsForOptions = useMemo(() => (data.schools || []).filter((school) => {
+    if (filters.state && school.state !== filters.state) return false;
+    if (filters.city && school.city !== filters.city) return false;
+    if (filters.zone && school.zone !== filters.zone) return false;
+    return true;
+  }), [data.schools, filters.city, filters.state, filters.zone]);
+
+  const stateOptions = useMemo(() => [["", "Todos os estados"], ...uniqueValues((data.schools || []).map((school) => school.state)).map((value) => [value, value])], [data.schools]);
+  const cityOptions = useMemo(() => [["", "Todas as cidades"], ...uniqueValues((data.schools || []).filter((school) => !filters.state || school.state === filters.state).map((school) => school.city)).map((value) => [value, value])], [data.schools, filters.state]);
+  const zoneOptions = useMemo(() => [["", "Todas as zonas"], ...uniqueValues((data.schools || []).filter((school) => (!filters.state || school.state === filters.state) && (!filters.city || school.city === filters.city)).map((school) => school.zone)).map((value) => [value, value])], [data.schools, filters.city, filters.state]);
+  const schoolOptions = useMemo(() => [["", "Todas as escolas"], ...filteredSchoolsForOptions.map((school) => [school.id, school.name])], [filteredSchoolsForOptions]);
+  const campaignOptions = useMemo(() => [["", "Todas as campanhas"], ...(data.campaigns || []).map((campaign) => [campaign.id, campaign.name])], [data.campaigns]);
+
+  const updateFilter = (field, value) => {
+    setFilters((current) => {
+      if (field === "state") return { ...current, state: value, city: "", zone: "", schoolId: "" };
+      if (field === "city") return { ...current, city: value, zone: "", schoolId: "" };
+      if (field === "zone") return { ...current, zone: value, schoolId: "" };
+      if (field === "campaignId") {
+        const nextCampaign = findById(data.campaigns || [], value);
+        return {
+          ...current,
+          campaignId: value,
+          startDate: nextCampaign?.startDate || "",
+          endDate: nextCampaign?.endDate || "",
+        };
+      }
+      return { ...current, [field]: value };
+    });
+  };
+
+  const clearFilters = () => {
+    setFilters({ state: "", city: "", zone: "", schoolId: "", campaignId: "", startDate: "", endDate: "" });
+  };
+
+  const evaluationRows = useMemo(() => (data.evaluations || []).filter(isEvaluationFinalized).map((evaluation) => {
+    const student = findById(data.students || [], evaluation.studentId);
+    const school = findById(data.schools || [], evaluation.schoolId || student?.schoolId);
+    const campaign = findCampaignForEvaluation(data.campaigns || [], evaluation);
+    const evaluatedAt = evaluation.evaluatedAt || evaluation.updatedAt || evaluation.createdAt || "";
+    const anthropometryResult = evaluateAnthropometricStatus({
+      weight: evaluation?.anthropometry?.weight,
+      height: evaluation?.anthropometry?.height,
+      birthDate: student?.birthDate,
+      sex: evaluation.sex || student?.sex,
+      evaluationDate: evaluatedAt,
+      schoolId: school?.id || evaluation.schoolId,
+      schoolName: evaluation.schoolName || school?.name,
+      grade: evaluation.studentGrade || student?.grade,
+      classroom: evaluation.studentClassroom || student?.classroom,
+    });
+    const bmiValue = Number(String(evaluation?.anthropometry?.bmi || evaluation?.bmi || anthropometryResult.bmi || "").replace(",", "."));
+    const classification = evaluation.nutritionalClassification || evaluation.classification || anthropometryResult.classificationLabel || "Nao informada";
+    const selectedCampaignIdentityMatch = selectedCampaign && (
+      String(evaluation.campaignId || "") === String(selectedCampaign.id) ||
+      normalizeCsvKey(evaluation.campaignName) === normalizeCsvKey(selectedCampaign.name)
+    );
+
+    return {
+      evaluation,
+      student,
+      school,
+      schoolId: school?.id || evaluation.schoolId || "",
+      schoolName: evaluation.schoolName || school?.name || "-",
+      state: school?.state || "",
+      city: school?.city || "",
+      zone: school?.zone || "",
+      campaign,
+      campaignName: evaluation.campaignName || campaign?.name || "-",
+      selectedCampaignIdentityMatch,
+      studentName: evaluation.studentName || student?.name || "-",
+      grade: evaluation.studentGrade || student?.grade || "",
+      shift: evaluation.studentShift || student?.shift || "",
+      classification,
+      bmiValue: Number.isFinite(bmiValue) ? bmiValue : null,
+      evaluatedAt,
+      evaluationDate: String(evaluatedAt || "").slice(0, 10),
+    };
+  }), [data.campaigns, data.evaluations, data.schools, data.students, selectedCampaign]);
+
+  const filteredRows = useMemo(() => {
+    const dateFilterIsCampaignPeriod = selectedCampaign && filters.startDate === (selectedCampaign.startDate || "") && filters.endDate === (selectedCampaign.endDate || "");
+
+    return evaluationRows.filter((item) => {
+      if (filters.state && item.state !== filters.state) return false;
+      if (filters.city && item.city !== filters.city) return false;
+      if (filters.zone && item.zone !== filters.zone) return false;
+      if (filters.schoolId && String(item.schoolId) !== String(filters.schoolId)) return false;
+      if (selectedCampaign && !isEvaluationInCampaign(item.evaluation, selectedCampaign)) return false;
+
+      const shouldApplyDateFilter = !dateFilterIsCampaignPeriod || !item.selectedCampaignIdentityMatch;
+      if (shouldApplyDateFilter && filters.startDate && (!item.evaluationDate || item.evaluationDate < filters.startDate)) return false;
+      if (shouldApplyDateFilter && filters.endDate && (!item.evaluationDate || item.evaluationDate > filters.endDate)) return false;
+      return true;
+    });
+  }, [evaluationRows, filters.city, filters.endDate, filters.schoolId, filters.startDate, filters.state, filters.zone, selectedCampaign]);
+
+  const schoolScopeIds = useMemo(() => new Set((data.schools || []).filter((school) => {
+    if (filters.state && school.state !== filters.state) return false;
+    if (filters.city && school.city !== filters.city) return false;
+    if (filters.zone && school.zone !== filters.zone) return false;
+    if (filters.schoolId && String(school.id) !== String(filters.schoolId)) return false;
+    return true;
+  }).map((school) => String(school.id))), [data.schools, filters.city, filters.schoolId, filters.state, filters.zone]);
+
+  const summary = useMemo(() => {
+    const evaluatedStudentIds = new Set(filteredRows.map((item) => String(item.evaluation.studentId || item.student?.id || item.evaluation.id)).filter(Boolean));
+    const studentsInScope = (data.students || []).filter((student) => !schoolScopeIds.size || schoolScopeIds.has(String(student.schoolId)));
+    const bmiValues = filteredRows.map((item) => item.bmiValue).filter(Number.isFinite);
+    return {
+      schools: new Set(filteredRows.map((item) => item.schoolId).filter(Boolean)).size || schoolScopeIds.size,
+      students: studentsInScope.length,
+      evaluatedStudents: evaluatedStudentIds.size,
+      evaluations: filteredRows.length,
+      averageBmi: bmiValues.length ? bmiValues.reduce((sum, value) => sum + value, 0) / bmiValues.length : null,
+    };
+  }, [data.students, filteredRows, schoolScopeIds]);
+
+  const coveragePercent = summary.students ? Math.round((summary.evaluatedStudents / summary.students) * 100) : 0;
+
+  const rowsBySchool = useMemo(() => {
+    const grouped = new Map();
+    filteredRows.forEach((item) => {
+      const key = item.schoolId || item.schoolName;
+      const current = grouped.get(key) || { schoolName: item.schoolName, evaluations: 0, students: new Set(), bmiValues: [] };
+      current.evaluations += 1;
+      if (item.evaluation.studentId || item.student?.id) current.students.add(String(item.evaluation.studentId || item.student.id));
+      if (Number.isFinite(item.bmiValue)) current.bmiValues.push(item.bmiValue);
+      grouped.set(key, current);
+    });
+    return Array.from(grouped.values()).map((item) => ({
+      ...item,
+      evaluatedStudents: item.students.size,
+      averageBmi: item.bmiValues.length ? item.bmiValues.reduce((sum, value) => sum + value, 0) / item.bmiValues.length : null,
+    })).sort((left, right) => right.evaluations - left.evaluations || left.schoolName.localeCompare(right.schoolName, "pt-BR"));
+  }, [filteredRows]);
+
+  const rowsByClassification = useMemo(() => Object.entries(filteredRows.reduce((acc, item) => {
+    const label = item.classification || "Nao informada";
+    acc[label] = (acc[label] || 0) + 1;
+    return acc;
+  }, {})).sort((left, right) => right[1] - left[1]), [filteredRows]);
+
+  const rowsByGrade = useMemo(() => Object.entries(filteredRows.reduce((acc, item) => {
+    const label = item.grade || "Nao informada";
+    acc[label] = (acc[label] || 0) + 1;
+    return acc;
+  }, {})).sort((left, right) => left[0].localeCompare(right[0], "pt-BR", { numeric: true })), [filteredRows]);
+
+  const latestRows = useMemo(() => [...filteredRows]
+    .sort((left, right) => new Date(right.evaluatedAt || 0) - new Date(left.evaluatedAt || 0))
+    .slice(0, 20), [filteredRows]);
+
+  return (
+    <PageCard title="Resumo de Campanha Nutricional" crumb="Relatorios" icon={<ClipboardList className="title-icon" />} className="report-page">
+      <div className="report-filter">
+        <SelectField label="Estado" value={filters.state} onChange={(event) => updateFilter("state", event.target.value)} options={stateOptions} />
+        <SelectField label="Cidade" value={filters.city} onChange={(event) => updateFilter("city", event.target.value)} options={cityOptions} />
+        <SelectField label="Zona" value={filters.zone} onChange={(event) => updateFilter("zone", event.target.value)} options={zoneOptions} />
+        <SelectField label="Escola" value={filters.schoolId} onChange={(event) => updateFilter("schoolId", event.target.value)} options={schoolOptions} />
+        <SelectField label="Campanha" value={filters.campaignId} onChange={(event) => updateFilter("campaignId", event.target.value)} options={campaignOptions} />
+        <label className="field">
+          <span>Data Inicio</span>
+          <input type="date" value={filters.startDate} onChange={(event) => updateFilter("startDate", event.target.value)} />
+        </label>
+        <label className="field">
+          <span>Data Fim</span>
+          <input type="date" value={filters.endDate} onChange={(event) => updateFilter("endDate", event.target.value)} />
+        </label>
+        <div className="button-row">
+          <button className="btn outline primary-text" type="button"> <Search size={16} /> Filtrar</button>
+          <button className="btn outline success-text" type="button" onClick={clearFilters}>Limpar</button>
+          <button className="btn outline danger-text" type="button" onClick={() => window.print()}>Gerar PDF</button>
+        </div>
+      </div>
+
+      {filteredRows.length ? (
+        <>
+          <div className="school-report-summary">
+            <div className="report-metric"><span>Escolas avaliadas</span><strong>{summary.schools}</strong></div>
+            <div className="report-metric"><span>Alunos avaliados</span><strong>{summary.evaluatedStudents}</strong></div>
+            <div className="report-metric"><span>Avaliacoes</span><strong>{summary.evaluations}</strong></div>
+            <div className="report-metric"><span>Cobertura</span><strong>{coveragePercent}%</strong></div>
+          </div>
+
+          <div className="grid two campaign-report-grid">
+            <Panel title="Resumo por Escola">
+              <Table
+                headers={["Escola", "Alunos", "Avaliacoes", "IMC Medio"]}
+                rows={rowsBySchool.map((item) => [item.schoolName, item.evaluatedStudents, item.evaluations, Number.isFinite(item.averageBmi) ? item.averageBmi.toFixed(2) : "-"])}
+                empty="Nenhuma escola encontrada no periodo."
+              />
+            </Panel>
+            <Panel title="Classificacao Nutricional">
+              <Table
+                headers={["Classificacao", "Total"]}
+                rows={rowsByClassification.map(([label, total]) => [label, total])}
+                empty="Nenhuma classificacao encontrada."
+              />
+            </Panel>
+          </div>
+
+          <div className="grid two campaign-report-grid">
+            <Panel title="Avaliacoes por Serie">
+              <Table
+                headers={["Serie", "Avaliacoes"]}
+                rows={rowsByGrade.map(([label, total]) => [label, total])}
+                empty="Nenhuma serie encontrada."
+              />
+            </Panel>
+            <Panel title="Indicadores Gerais">
+              <Table
+                headers={["Indicador", "Valor"]}
+                rows={[
+                  ["Campanha", selectedCampaign?.name || "Todas as campanhas"],
+                  ["Periodo", `${formatDate(filters.startDate) || "Inicio livre"} a ${formatDate(filters.endDate) || "Fim livre"}`],
+                  ["Alunos cadastrados no filtro", summary.students],
+                  ["IMC medio", Number.isFinite(summary.averageBmi) ? summary.averageBmi.toFixed(2) : "-"],
+                ]}
+              />
+            </Panel>
+          </div>
+
+          <DataBlock>
+            <Table
+              headers={["Aluno", "Escola", "Serie", "Classificacao", "IMC", "Data"]}
+              rows={latestRows.map((item) => [
+                item.studentName,
+                item.schoolName,
+                item.grade || "-",
+                item.classification || "-",
+                Number.isFinite(item.bmiValue) ? item.bmiValue.toFixed(2) : "-",
+                formatDateTime(item.evaluatedAt),
+              ])}
+              empty="Nenhuma avaliacao encontrada para gerar o resumo."
+            />
+          </DataBlock>
+        </>
+      ) : (
+        <div className="alert warning-light">Nenhuma avaliacao encontrada para gerar o resumo.</div>
+      )}
+      <ReportCompanyFooter />
+    </PageCard>
+  );
 }
 
 function ReportFrame({ title, fields, actions, empty }) {
