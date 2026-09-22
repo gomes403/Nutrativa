@@ -142,6 +142,13 @@ function createDataStore(options = {}) {
     }
   }
 
+  async function ensurePostgresSecurity() {
+    if (!["pg", "postgres", "postgresql"].includes(config.client)) return;
+
+    await knex.raw("ALTER TABLE public.records ENABLE ROW LEVEL SECURITY");
+    await knex.raw("ALTER TABLE public.app_meta ENABLE ROW LEVEL SECURITY");
+  }
+
   async function setMeta(metaKey, value, trx = knex) {
     const payload = JSON.stringify(value);
     const existing = await trx("app_meta").where({ meta_key: metaKey }).first();
@@ -265,6 +272,7 @@ function createDataStore(options = {}) {
 
   async function init() {
     await ensureSchema();
+    await ensurePostgresSecurity();
     await ensureSeedData();
   }
 
